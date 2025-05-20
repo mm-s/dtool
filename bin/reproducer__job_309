@@ -1,0 +1,165 @@
+#!/bin/bash
+. lib/libconfigure.env
+
+job=309
+
+init_libconfigure() {
+    . lib/libconfigure.env
+    if [ "$dev_handle" == "XX" ]; then
+        >&2 echo "KO 40394 Not initialised. Run bin/devtool set_dev"
+        exit 1
+    fi
+    devuser=${dev_handle,,}
+    vm__ci="$(vm_ci ${dev_handle})"
+    my_vm__test="$(vm_dev ${dev_handle})"
+    my_vm__node="$(vm_nod ${dev_handle})"
+    my_vm__testnet__node="$(vm_tn ${dev_handle})"
+}
+
+
+if [[ -z $1 ]]; then
+    >&2 echo "KO 11032 step <0|1|2>     0 Bootstrap the reproducer; 1 only deploy stv script; 2 reset blockchain"
+    exit 1
+fi
+
+let step=$1      #0 rebuild_from_scratch
+                 #1-ssh
+
+if [[ $step -eq 0 ]]; then
+    echo "Modify your conf:"
+    cat << EOF
+add_ss__node testnet genesis
+add_ss__node testnet user1
+
+EOF
+    echo "Select:"
+    echo "* SS: Use your XX file: cfg/ss/${hoy_handle}.env"
+    echo "* Hosts: 1, your VM"
+    bin/configure reconfigure
+#    make clean_cache
+    make clean
+    make deploy_notest
+fi
+
+if [[ $step -eq 1 ]]; then
+
+#-run as stv--------------------------------------------------------------------------------------------
+cat << EOF > /tmp/repr209.stvsh
+#!/bin/bash
+
+stv="bin/stvtool -batch"
+echo "change to node user1"
+\${stv} chnode user1 || exit 1
+
+#Set alias/var
+echo "buy license? [no|*=yes]"
+read x
+if [[ "$x" != "no" ]]; then
+	#get tokens
+    echo "\$(date '+[%Y-%m-%d %H:%M:%S]' ) DEBUG TR-job309_REWARDS 00000 FAUCET stv --lightning faucet "
+	\$stv --lightning faucet
+	echo "wait 12 secs"
+	sleep 12
+	#get license
+    echo "\$(date '+[%Y-%m-%d %H:%M:%S]' ) DEBUG TR-job309_REWARDS 00000 BUY_LICENSE stv --lightning  buy_license "
+	\$stv --lightning buy_license
+	# stake the node
+    echo "\$(date '+[%Y-%m-%d %H:%M:%S]' ) DEBUG TR-job309_REWARDS 00000 STAKING stv --lightning stake "
+	\${stv} --lightning stake
+    echo "\$(date '+[%Y-%m-%d %H:%M:%S]' ) DEBUG TR-job309_REWARDS 00000 DONE"
+
+	cat << IEOF
+
+#Execute on each node: (piick the date from abobe 4 events: this one: stv --lightning stake. Use it below
+
+Find the logs from that point:
+clear; cat /var/log/script_tv__be__L1__script4__genesis__gov.stderr  | grep "\[2024-12-16 19:09:23\]" -A100000 | grep "TR-" |  more
+
+Track logs:
+clear; tail -f /var/log/script_tv__be__L1__script4__genesis__gov.stderr  | grep "TR-"
+
+
+monitor gcp size:
+tail -f /var/log/script_tv__be__L1__script4__genesis__gov.stderr  | grep "TR-job309_REWARDS 60140"
+
+
+
+
+IEOF
+
+
+
+fi
+
+	cat << IEOF
+* stv -batch -a status
+* stv -batch -a status | grep current_
+
+
+
+IEOF
+
+echo "current_epoch \$(\$stv -a status | grep current_epoch)
+echo "current_height \$(\$stv -a status | grep current_height)
+
+
+
+exit 0
+EOF
+#---------------------------------------------------------------------------------------------
+init_libconfigure
+
+    libvmpool__vm_as ${my_vm__test} m0
+    scp /tmp/repr209.stvsh root@${m0__server_name}:/home/stv/bin
+    ssh root@${m0__server_name} "chown stv:stv /home/stv/bin/repr209.stvsh && chmod +x /home/stv/bin/repr209.stvsh"
+    rm -f /tmp/repr209.stvsh
+
+    cat << EOF
+Next steps:
+===========
+0 - Go clone and fork MM/job_309 brach https://github.com/scriptnetwork/script-4
+    git checkout MM/job_309
+    git checkout -b ${dev_handle}/job_309
+0.1 add traces
+0.2 run in script-4 rep bin/hotfix_host <hostname=<yourVM>.cto.script.tv>
+    This will replace the golang binaries (script and scriptcli) in the reproducer
+
+0.5.- Open a terminator window split in 2, for monitoring genesis and user1 respectively. Run the following on each one.
+  M1: bin/configure sshcmd "tail -f /var/log/script_tv__be__L1__script4__genesis__gov.stderr | grep \"TR-\""          # instrumented with traces on script-4/MM/job_309;
+  M2: bin/configure sshcmd "tail -f /var/log/script_tv__be__L1__script4__user1__gov.stderr | grep \"TR-\""          # instrumented with traces on script-4/MM/job_309;
+
+1.- bin/configure ssh ........................................ access vm ${my_vm__test}"
+                                                                                        # corresponding sequence diagram at be/L1/script4/doc/consensus_engine.dia
+  stv ...................................................... change to user stv"
+3.- as stv:
+  stv ...................................................... Run at least once stv to verify everything is in sync.
+    Current node: user1                                      Check output.
+    Network: testnet
+  stv -a status                                              Check explorer height is synced with current_height
+
+  bin/repr209.stvsh ........................................ run the reproducer
+4.- in rep script-4: Instrument code
+    bin/hotfix_host ${m0__server_name} ..................... deploy changes
+EOF
+
+
+==STEP 1 COMPLETED==
+
+Narrowing the problem. Iteration over:
+   1.- trace code and do step 0.2 to update L1 golang binaries
+   2.- restart the test: run "$0 2" to reset the blockchain, ready for executing bin/repr209.stvsh again 
+
+
+libconfigure__cleanup
+
+fi
+
+if [[ $step -eq 2 ]]; then
+init_libconfigure
+
+bin/configure sshcmd "script_tv__ctl.sh stop && rm -rf /var/lib/mongodb/* && rm /home/stv/script4/genesis/gov/db -rf && rm /home/stv/script4/user1/gov/db -rf && rm /svr/script_tv/be/b2c/testnet/genesis/licensing -rf && script_tv__ctl.sh start"
+libconfigure__cleanup
+
+fi
+exit 0
+

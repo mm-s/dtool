@@ -1,0 +1,14 @@
+FROM debian:latest
+
+COPY _targets/mnemonic/jail/ /jail_tmp
+COPY _targets/mnemonic/system__install.sh /usr/local/bin/system__install.sh
+
+# installer
+RUN chmod +x /usr/local/bin/system__install.sh
+RUN /usr/local/bin/system__install.sh local /jail_tmp
+
+# clean up
+RUN rm -rf /jail_tmp
+
+# ntry point
+ENTRYPOINT []

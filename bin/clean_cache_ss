@@ -1,0 +1,8 @@
+#!/bin/bash
+ss=$1
+echo "clean_cache SS $ss"
+pushd $ss >/dev/null
+make clean_cache
+popd > /dev/null
+
+exit 0

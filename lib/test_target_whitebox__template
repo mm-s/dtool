@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+
+### WhiteBox test template
+## How to use:
+## 1.- Place a modified copy of this file as  \${subsystem}/.dotool/test_target_whitebox, chmod +x.
+## 2.- This file will be sourced as root in the target test machine just after the service corresponding to this subsystem is brought up on service/duty.
+## 3.- It is meant to contain tests that can be used to monitor any aspect of the running system.
+## 4.- Tied to the mere existance of this file a light/led will appear in http://make.script.tv/current 
+## 5.- Interface: The result of your algorithm must inform the circuitery on opinion about something you can say in one line that can result in block or cause disruptions in the deployment process, as leds influence the decision making of the monitoring agent.:
+## 6.- Spec: set 3 variables after being sourced, as in the example.
+## 6.1.- KO_line format KO/OK code.
+##   OK             (equivalent to int 0; nullptr)
+##   KO <code> <status line>
+##      code is 5 digits, randomly typed; Status line is information about the failure.
+##      random code helps tracing run-time events to code.
+## 6.2.-test_led_headline Line will go verbatim to led panel.
+## 6.3.-test_led Set the light, set to one of off|red|amber|green 
+
+test_KO_line=OK        #KO|OK
+test_led_headline="" 
+test_led=off      #off|red|amber|green 
+
+
+function entry_point {
+    test_KO_line="KO 48732 Subsystem whitebox test at unmodified-template state. It does nothing for no one."
+    test_led_headline="Hello, I am a whitebox test invoked in a $(uname -a) machine."
+    test_led=red
+}
+
+entry_point #invoked here when the file is sourced.
+

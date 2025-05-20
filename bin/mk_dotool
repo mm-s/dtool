@@ -1,0 +1,30 @@
+#!/bin/bash
+SYSDIR=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)/..
+SYSDIR=$(realpath ${SYSDIR})
+
+ss=$1
+shift 
+ss_network=$1
+shift 
+ss_instance=$1
+shift 
+m=$1
+shift 
+
+pushd ${SYSDIR} > /dev/null
+    bin/configure make_ss ${ss} ${ss_network} ${ss_instance} ${m}
+popd > /dev/null
+
+while true; do
+    output=$1
+    shift
+    if [[ -z "${output}" ]]; then
+        break
+    fi
+    if [[ ! -f ${output} ]]; then
+        >&2 echo "KO 70691 expected output not found ${output}"
+        exit 1
+    fi
+done
+exit 0
+

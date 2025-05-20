@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+
+. lib/shenv
+. lib/libAWS.env
+
+echo "Creating test AWS instance"
+
+
+# local ip="3.109.132.84"
+# local instance_name="i-01dde78f3083187b7"
+# local type="t3.small"
+# local region_pem_file="${pem_filename}"
+
+pool="L_FRA"
+name="VM_OHI_22"
+type="t2.nano"
+os="debian"
+pub_key="ssh-rsa AAAAB3NzaC1yc2EAAAABJQAAAgEAoKO4WUop3JgBy0zNXTdBb+3G2jW8arNw9sZSImeAfy0mUgSiH+04W+dR/45unNUZ82uq0JWTHL6lpt1eLt+PiN+M5hOEB8NcjBkK9dgVXXa2EJGwh28x8s93iGpXzw2tFch1heNMt5JLFO3HuyIz2i8iTJ7RB89wa282u7Gk9+HLqmySxlvW9sB12DvPFW5qPgTXiKqMBWe/C9xpYt/7YzB9wo2CwS/ShSJe1Ge0HwDGo7vXWc1+WsZvdPkIJADqQ6oKo5IDJQu44Q6EeT6Z/7XBJZtKoGROL9k5wvDejXIO3BBNESQp0I5ODFQy4nU644BArej8+EI3aulNECgAOauNpwbIWY8vHF26t416IAmuuT8x91ikKs90EWzo9OlWZI7V/8RjLKy6eVy1LijxW7tyvv/dNLmODKcODIonfYzae7aSQsHZ5HRZxLv8yq65zJDdMqxM2mqXaBym6wLtpLIyrGwcIB2Bt99Bw2KeMLL2w0TvMWR5D3SS6nIwleMH45OXguQoOjoEjfZyAa/xMk14Ka/TBWC9LvbOu+ctVnEIMbSbubl9lSYctdtU9XZmP/+V9H58xRZAhkcaKD7f4c2ZjyBpY6mcWijChHkL2+nLHP1GsL5g0Hjg/KiKKpXSGTyWR2Zi69UXVQ1qO/6xyTnDfIvQ23o4tj0zigd0ljE= DarkRule"
+pem_filename="" # /abs/path/to/hot_ohi.pem
+# pem_filename="/Users/dark/.ssh/script_tv" # /abs/path/to/hot_ohi.pem
+pub_key=""
+pem_filename="/Users/dark/.ssh/script_rand" # /abs/path/to/hot_ohi.pem
+
+
+libAWS__create_vm "${pool}" "${name}" "${type}" "${os}" "${pub_key}" "${pem_filename}"
+
+# result=$(libAWS__create_vm "${pool}" "${name}" "${type}" "${os}" "${pub_key}" "${pem_filename}") 
+# # echo "result: ${result}"
+# if [[ $? -ne 0 ]]; then
+#     echo ${result}
+#     exit 1
+# fi
+
+
+libAWS__check_vm "${name}" "${pub_key}" "${pem_filename}"
+
+# libAWS__terminate_vm "${name}"

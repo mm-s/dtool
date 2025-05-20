@@ -1,0 +1,266 @@
+#!/bin/bash
+
+. lib/mk_target/libbuild_ss.env
+
+ss_version="1.0"
+
+#secrets
+bag_file="env"
+ss_secrets_dest_file="secrets.${bag_file}"
+
+#tests - number of seconds the ss needs to be operational (ready for e2e tests)
+ss_test__delay=0
+
+mk_target__build_order__depends() {
+:
+}
+
+# --------------------- secrets
+mk_target__secrets__version() {
+    echo "1"
+}
+
+mk_target__secrets__print() {
+    cat << EOF
+example_secret="${example_secret}"
+
+EOF
+}
+
+mk_target__secrets__init() {
+    example_secret="0"
+}
+# -/------------------- secrets
+
+
+#############################
+## set_vars
+## call order is closer vars first (closer to ss), then farther vars in the dependency line (closer to system)
+#############################
+mk_target__set_vars() {
+    libss__set_vars
+}
+
+mk_target__set_vars() {
+    libss__set_vars
+}
+
+mk_target__vars__echo() {
+    libss__vars__echo
+}
+
+# append variables to daemon env runtime files 
+mk_target__vars__echo__runtime_env() {
+:
+}
+
+#############################
+## output_vars__echo
+## input_vars -> mk_target_entry_point -> output_vars  
+#############################
+mk_target__output_vars__echo() {
+    libss__output_vars__echo
+}
+
+mk_target__check_instance() {
+    >&2 echo "SS: ${ss}. mk_target__check_instance Not implemented"
+    exit 1
+}
+
+#############################
+## resolve_variables
+## get values from other subsystemns
+#############################
+mk_target__resolve_variables() {
+    libss__resolve_variables
+}
+
+#############################
+## generate_static_conf
+## overwrite build-system static configuration files:
+## hints:
+## Read values published by other subsystems: function system_resolve: ref see www__backend impl
+## gen__application_properties > application.properties
+#############################
+mk_target__generate_static_conf() {
+    local jail=$1
+    echo > /dev/null
+}
+
+#############################
+## build_install
+## Invoke the compiler, leave assets in supplied dir:
+#############################
+mk_target__build_install() {
+    local ss_cache_dir=$1
+    local jail=$2
+    if [[ -d "${ss_cache_dir}/files" ]]; then # Check if ss_cache_dir already exists, skip building if it does
+        echo "Cache directory exists, skipping build."
+        return
+    fi
+    mkdir -p ${ss_cache_dir}/files
+}
+
+#############################
+## transfer_from_cache
+## write target system root directory at:
+##      ${jail}
+## setup the jail (target filesystem), using files found in cache dir and generating any other files needed in at runtime
+#############################
+mk_target__transfer_from_cache() {
+    local ss_cache_dir=$1
+    local jail=$2
+}
+
+# information about where to put and how to get user installer
+mk_target__distributor_files() {
+:
+}
+
+#############################
+## libfn
+## Verify how this content is placed in files
+## _targets/*/system__install.sh
+## _targets/^/jail/usr/local/bin/script_tv__uninstall.sh
+#############################
+mk_target__libfn() {
+:
+}
+
+#############################
+## pre-install
+## Verify how this content is placed in files
+## _targets/*/system__install.sh
+## _targets/^/jail/usr/local/bin/script_tv__uninstall.sh
+#############################
+mk_target__steps__pre_install() {
+:
+}
+
+#############################
+## post-install
+## init services like e.g. symlink at sites-enabled
+## Verify how this content is placed in files
+## _targets/*/system__install.sh
+## _targets/^/jail/usr/local/bin/script_tv__uninstall.sh
+#############################
+mk_target__steps__post_install() {
+:
+}
+
+#############################
+## pre-uninstall
+## init services like e.g. remove symlink at sites-enabled
+## stop services like e.g. nginx only-if sites-enabled is empty
+## Verify how this content is placed in files
+## _targets/*/system__install.sh
+## _targets/^/jail/usr/local/bin/script_tv__uninstall.sh
+#############################
+mk_target__steps__pre_uninstall() {
+:
+}
+
+#############################
+## post-uninstall
+## Verify how this content is placed in files
+## _targets/*/system__install.sh
+## _targets/^/jail/usr/local/bin/script_tv__uninstall.sh
+#############################
+mk_target__steps__post_uninstall() {
+:
+}
+
+#############################
+## declare_listening_tcp_ports (external interface, not localhost)
+## call to libss__declare_listening_tcp_port <port> <protocol> <interface>
+#############################
+mk_target__declare_listening_tcp_ports() {
+:
+}
+
+#############################
+## List services/daemons exclusive to this subsystem.
+## Services like nginx can be shared across subsystems and other systems and shall not be listed here
+## A systemd script will be generated for services listed here.
+## list service names in start order
+#############################
+mk_target__systemctl_services() {
+:
+}
+
+#############################
+## List of used shared services/daemons .
+## Services like nginx can be shared across subsystems and other systems and shall not be listed here
+## A systemd script will be generated for services listed here.
+## mysvc1 #example svc
+## mysvc2 #example svc
+#############################
+mk_target__systemctl_services__shared() {
+:
+}
+
+mk_target__libweb_info() {
+:
+}
+
+mk_target__vars__deploy() {
+:
+}
+
+mk_target__deps_runtime__apt() {
+    libss__deps_runtime__apt
+}
+
+mk_target__deps_build__apt() {
+    libss__deps_build__apt
+}
+
+mk_target__stats() {
+    local jail=$1
+}
+
+mk_target__amend() {
+    local jail=$1
+    local m=$2
+}
+
+mk_target__hot_upgrade__info() {
+    libss__hot_upgrade__info
+}
+
+mk_target__entry_point() {
+    local jail=$1
+    local m=$2     #machine 
+    if [[ "_${only_dotool_ss}" != "_" ]]; then
+        if [[ "_${ss}" != "_${only_dotool_ss}" ]]; then
+            >&2 echo "KO 55886 shouldnt happen. SS ${ss}"
+            exit 1
+        fi
+    fi
+    cat makefile | grep "^clean_deep:" > /dev/null
+    if [[ $? -eq 0 ]]; then
+        echo "Invoking make clean_deep"
+        make clean_deep
+    else
+        echo "Invoking make clean"
+        make clean
+    fi
+    mk_target__generate_static_conf ${jail}
+    if [[ "_${only_dotool_ss}" != "_" ]]; then
+        echo "TR 29102 OK. generate_static_conf SS ${ss}"
+        return
+    fi
+    mk_target__build_install ${ss_cache_dir}                #installs in cache directory
+    mk_target__transfer_from_cache ${ss_cache_dir} ${jail}
+    mk_target__stats ${jail}
+}
+
+mk_target__cleanup() {
+:
+}
+
+mk_target__constructor() {
+    libss__constructor
+}
+
+

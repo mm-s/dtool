@@ -1,0 +1,227 @@
+#!/bin/bash
+##########################################
+## CI - Entry Point - Script Network ##
+##########################################
+
+lock_file=".ci_lock"
+
+if [[ -f ${lock_file} ]]; then
+    local when=$(cat .ci_lock)
+    >&2 echo "KO 70660 CI is busy since $when"
+    exit 1
+fi
+
+date > ${lock_file}
+
+lock_file=$(realpath ${lock_file})
+
+nightly_builds__bootstrap__off() {
+    dev=$1
+    check_dev $dev
+    cat /etc/crontab | grep -v "#--script.tv" > /tmp/xxbg77
+    mv /tmp/xxbg77 /etc/crontab
+    cat << EOF >> /etc/crontab
+0  */8 * * * ${dev,,} cd /home/${dev,,} && system/bin/nightly_builds.sh run ${dev}   #--script.tv
+EOF
+    service cron reload
+}
+
+ci_unlock() {
+    local exit_code=$1
+    started=$(cat ${lock_file})
+    ended=$(date)
+    echo "start ${started}; ended ${ended}" | tee -a trigger_ledger
+    rm -f ${lock_file}
+}
+
+ensure_system() {
+    branch=$1
+    if [[ ! -d system ]]; then
+        git clone git@github.com:scriptnetwork/system.git
+        pushd system > /dev/null
+            git config pull.rebase true
+        popd > /dev/null
+    fi
+    pushd system > /dev/null
+        git reset --hard
+        git pull
+        git checkout ${branch}
+        git pull
+        if [[ $? -ne 0 ]]; then
+            >&2 echo "KO 84193"
+            ci_unlock 1
+            exit 1
+        fi
+    popd > /dev/null
+}
+
+run_ci() {
+    branch=$1
+    cfg=$2
+    ci_home=$3
+    ci_output_dir=$4
+    pushd system > /dev/null
+        echo "invoking bin/ci_branch  ${branch} ${cfg} ${ci_home} ${ci_output_dir}"
+        bin/ci_branch ${branch} ${cfg} ${ci_home} ${ci_output_dir}
+        echo "bin/ci_branch ended"
+    popd > /dev/null
+}
+
+ci__deliver_msg() {
+    human_title="$1"
+    file=$2
+    r2r_cto2dev__send_message "[CI]" "${human_title}" ${file}
+    echo "Success. Message sent to cto"
+    echo
+}
+
+extract_release_notes() {
+    local t="$1"
+    let f=0
+    cat doc/release_notes.md | while read -r line; do
+        if [[ $f -eq 0 ]]; then
+            echo "$line" | grep "^### $t" > /dev/null
+            if [[ $? -eq 0 ]]; then
+                let f=1
+                echo "$line"
+            fi
+        elif [[ $f -eq 1 ]]; then
+            echo "$line" | grep "^### " > /dev/null
+            if [[ $? -eq 0 ]]; then
+                break
+            else
+                echo "$line"
+            fi
+        fi
+    done
+}
+
+announce_release__stage() {
+    local b=$1
+    local display_uri=$2
+    r2r_dev2dev__dev__hdr "CI" "release" > /tmp/message
+    cat << EOFX >> /tmp/message
+arg type stage
+arg url https://stage.cto.script.tv
+arg branch $b
+arg display https://make.script.tv/${display_uri}/display
+arg release_notes
+
+EOFX
+    local t="stage"
+    pushd stage/system > /dev/null
+       extract_release_notes "$t" >> /tmp/message
+    popd > /dev/null
+    echo "eof" >> /tmp/message
+    ci__deliver_msg "✈️ STAGE RELEASE" /tmp/message
+    rm /tmp/message
+}
+
+announce_release__prod() {
+    local b=$1
+    local display_uri=$2
+    r2r_dev2dev__dev__hdr "CI" "release" > /tmp/message
+    cat << EOFX >> /tmp/message
+arg type production
+arg url https://script.tv
+arg branch ${b}
+arg display https://make.script.tv/${display_uri}/display
+arg release_notes
+
+EOFX
+    local t="v4 - $b"
+    pushd prod/system > /dev/null
+        extract_release_notes "$t" >> /tmp/message
+    popd > /dev/null
+    echo "eof" >> /tmp/message
+
+    ci__deliver_msg "🚀 PRODUCTION RELEASE $b" /tmp/message 
+    rm /tmp/message
+}
+
+. stage/system/lib/r2r/libr2r_dev2dev.env
+. stage/system/lib/r2r/libr2r_cto2dev.env
+
+branch=$1
+
+if [[ "_${branch}" == "_stage" ]]; then
+    mkdir -p /var/www/html/make/stage
+    mkdir -p stage
+    cfg=stage1
+    ci_home=$(realpath stage)
+    ci_output=$(realpath stage/output)
+    binconfigure="bin/configure --home ${ci_home}"
+    rm .dotool -rf
+    ln -s stage/.dotool
+    rm -rf ${ci_output}
+    pushd stage > /dev/null
+        ensure_system ${branch}
+        run_ci ${branch} ${cfg} ${ci_home} ${ci_output}
+    popd > /dev/null
+    echo "run_ci ended"
+    ts=$(find ${ci_output} -maxdepth 1 -mindepth 1 -type d -exec basename {} \;)
+    mv ${ci_output}/${ts} /var/www/html/make/stage/
+    rm -rf ${ci_output}
+    pushd /var/www/html/make/stage > /dev/null
+        rm -f current
+        ln -s ${ts} current
+        pushd ${ts}/display > /dev/null
+            ln -s ../../../img
+        popd > /dev/null
+    popd > /dev/null
+    rm -rf /var/www/html/make/img
+    mkdir -p /var/www/html/make/img
+    cp stage/system/display/img/* /var/www/html/make/img/
+    echo "ts=$ts"
+    echo "public storage: /var/www/html/make/stage/${ts}"
+    echo "public display: /var/www/html/make/stage/${ts}"
+    announce_release__stage ${branch} "stage/${ts}"
+elif [[ "_${branch}" == "_prod/"* ]]; then
+    mkdir -p /var/www/html/make/prod
+    mkdir -p prod/output
+    mkdir -p prod/output_log
+    cfg=prod
+    ci_home=$(realpath prod)
+    ci_output=$(realpath prod/output)
+    binconfigure="bin/configure --home ${ci_home}"
+    rm .dotool -rf
+    ln -s prod/.dotool 
+    rm -rf ${ci_output}
+    pushd prod > /dev/null
+        ensure_system ${branch}
+        run_ci ${branch} ${cfg} ${ci_home} ${ci_output}
+    popd > /dev/null
+    echo "run_ci ended"
+    ts=$(find ${ci_output} -maxdepth 1 -mindepth 1 -type d -exec basename {} \;)
+    mkdir -p /var/www/html/make/prod/${ts}
+    mv ${ci_output}/${ts}/display /var/www/html/make/prod/${ts}/
+    mkdir -p prod/output_log
+    mv ${ci_output}/${ts} prod/output_log/
+    rm -rf ${ci_output}
+    pushd /var/www/html/make/prod > /dev/null
+        rm -f current
+        ln -s ${ts} current
+        pushd ${ts}/display > /dev/null
+            ln -s ../../../img
+        popd > /dev/null
+    popd > /dev/null
+    rm -rf /var/www/html/make/img
+    mkdir -p /var/www/html/make/img
+    cp prod/system/display/img/* /var/www/html/make/img/
+    echo "-------------------------------------------------"
+    echo "ts: $ts"
+    echo "private storage: prod/output_log/${ts}"
+    echo "public display: /var/www/html/make/prod/${ts}"
+    echo "branch: ${branch}"
+    echo "-------------------------------------------------"
+
+    announce_release__prod ${branch} "prod/${ts}"
+
+else
+    >&2 echo "KO 50288 Invalid branch"
+    ci_unlock 1
+    exit 1
+fi
+ci_unlock 0
+exit 0
+

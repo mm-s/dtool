@@ -1,0 +1,40 @@
+/cfg_ss.env
+/cfg_hosts.env
+/_targets
+/_secrets
+/log/
+/display/isolated_deployment
+secrets.env
+secrets.properties
+mk_target__vars__echo.env
+.idea
+
+.vscode
+static__properties.env
+static__properties
+cfg_ss.env.local
+
+*~
+.kaseklis
+
+*.csr
+/bin/slack
+/jobs
+/dotool
+/_secrets
+/_dev_secrets_*
+
+# certificates
+/ca/*.crt
+!/ca/cto.script.tv.crt
+
+# worktrees jobs
+/job_*
+/review
+/ref
+/jobs_stage
+
+#CI files
+/stage__secrets/ca/stage.cto.script.tv__CA.key
+/stage__secrets/ssl/certs/stage.cto.script.tv.key
+/stage__secrets/dotool.env

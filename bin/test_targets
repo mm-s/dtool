@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+
+targets=$1
+
+if [[ ! -d ${targets} ]]; then
+    >&2 echo "KO 33209 ${targets} directory doesn't exist."
+    exit 1
+fi
+
+if [[ -f ${targets}/m1/jail/home/stv/.script/mainnet/bridge_eth/config.yaml ]]; then
+	cat ${targets}/m1/jail/home/stv/.script/mainnet/bridge_eth/config.yaml | grep rpcEndpoint | grep "\"\""
+	if [[ $? -eq 0 ]]; then
+		>&2 echo "KO 77869 rpcEndpoint ${targets}/m1/jail/home/stv/.script/mainnet/bridge_eth/config.yaml"
+		exit 1
+	fi
+fi
+
+exit 0
+
+

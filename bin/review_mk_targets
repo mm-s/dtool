@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+
+function files {
+    for f in $(find . -name "mk_target.env"); do
+	echo $f
+    done
+}
+
+
+#files > /tmp/files0
+
+for f in $(cat /tmp/files0); do
+    echo "next? [$f] [y]: "
+    read x
+    meld lib/mk_target__template $f
+done
+

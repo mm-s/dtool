@@ -1,0 +1,1797 @@
+#!/bin/bash
+
+rep="git@github.com:scriptnetwork/system.git"
+project_url="https://script.tv"
+jobs="etc/jobs"
+binname=$0
+
+jobs_state_menu() {
+    cat << EOF
+        fetch .......................... Updates the local job list.
+        all  ........................... List all jobs (from local file).
+        jobs ........................... List my taken jobs.
+        take [<id>] .................... Take a job. If no id is given a pick list is shown.
+        release [<id>] ................. Quit given job.
+
+EOF
+}
+
+working_status() {
+    if [[ "_${io_state}" == "_in" ]]; then
+        echo "🟢 (You are online)"
+    else
+        echo "🔴 (You are idle/afk/offline)"
+    fi
+}
+
+hint() {
+    if [[ "_${io_state}" == "_in" ]]; then
+        iohint="dt sign_out .................... Stop working"
+    else
+        iohint="dt sign_in ..................... Start working"
+    fi
+    cat << EOF
+Hints:
+        source lib/devenv .............. handy bash aliases (dt)
+        dt jobs ........................ List your taken jobs
+        $iohint
+
+EOF
+}
+
+help__job_workflow() {
+    if is_worktree; then
+        cat << EOF
+        review ......................... Self Review.
+        rr ............................. Review Request.
+        sync ........................... Update refs and rebase this job branch.
+
+EOF
+    else
+        cat << EOF
+        review <branch> ................ Review peer's job.
+        rr <job> ....................... Review Request for given job.
+        sync ........................... Sync all taken jobs.
+
+EOF
+    fi
+}
+
+help__ca() {
+    cat << EOF
+    --- CA and SSL Certificates: (Default domain: ${dev_handle,,}.${root_ca__domain})
+        create_CA_cert [<domain>] ...... Produce CA cert for domain.
+        create_p2p_CA_cert [<domain>] .. Produce p2p CA certs at
+                                         ${secrets_root}/be/b2c/mainnet/genesis and
+                                         ${secrets_root}/be/b2c/testnet/genesis
+        create_SSL_cert <domain> ....... Produce wildcard cert at
+                                         ${secrets_root}/ssl/certs
+        CA_keys ........................ Lists authoritative domains.
+        check_own_CA_cert <domain> ..... Verifies given cert matches user's private key.
+        sign_CSR [<file>] .............. Creates CA Cert from a cto2dev 800 create_cert message.
+        split_CA_cert <ca_domain> ...... Split given cert (cert chain) into individual files.
+        view_cert <pem file> ........... Decode pem file.
+
+EOF
+}
+
+help__inf() {
+    cat << EOF
+    --- VM:
+        request_vm ..................... Launch Instance. Interactive.  [Not yet implemented]
+        release_vm ..................... Release resource.              [Not yet implemented]
+
+EOF
+}
+
+help() {
+    cat << EOF
+devtool v2 - dev automation
+    config files: ${datadir}/config
+                  ${dev_datadir}/config
+    dev: ${dev_handle}
+    secrets:
+    ${dev_secrets_root}
+
+Usage:
+    $0 [options] <command>
+
+Options:
+    --dev_handle <XX> .................. Use given dev handle.
+
+EOF
+    hint
+    cat << EOF
+Commands:
+    --- setup:
+        deps ........................... Required apt packages
+        set_dev [XX].................... Set dev handle.
+        forget ......................... Forget dev handle [${dev_handle}]
+
+    --- jobs (issues|tickets|orders):
+EOF
+    jobs_state_menu
+    cat << EOF
+    --- business workflow:
+        sign_in ........................ Start the day.
+        sign_out ....................... Call it a day.
+
+    --- jobs workflow:
+EOF
+    help__job_workflow
+    help__ca
+    help__inf
+
+    cat << EOF
+State:
+    --- Biz: ${io_state} - $(working_status)
+
+    --- Jobs taken (dt jobs):
+EOF
+    libjobs__print_taken
+    cat << EOF
+    --- Active job: branch ${libdevtool__branch}, job:
+EOF
+    libjobs__print_active_job
+    echo
+}
+
+voidfn() {
+    cat << EOF
+X    Other/Experimental:
+X    --- misc:
+X       menu ...................... Run menu
+X       invite <XX> ............... Invite XX to join on a shared shell.
+X
+X   --- pair programming:
+X       join <XX> ................. join XX on their shared shell.
+X
+X   --- AI:
+X       devbot on|off          [off] turn on bot.
+X
+X
+EOF
+}
+
+filter_fn__state=0
+
+filter_fn() {
+  while read -r line; do
+    local hash=$(echo "$line" | awk '{ print $1 }')
+    if [[ $hash == ${hash_head} ]]; then
+        if [[ $filter_fn__state -ne 0 ]]; then
+            >&2 echo "KO 29844 "
+            exit 1
+        fi
+        let filter_fn__state=1
+        echo
+        echo "h--> ${line}"
+    else
+        if [[ $hash == ${hash_base} ]]; then
+            if [[ $filter_fn__state -ne 1 ]]; then
+                >&2 echo "KO 29843 "
+                exit 1
+            fi
+            let filter_fn__state=0
+            echo "b--> ${line}"
+            echo
+        else 
+            if [[ $filter_fn__state -eq 0 ]]; then
+                echo "     ${line}"
+            elif [[ $filter_fn__state -eq 1 ]]; then
+                echo "---> ${line}"
+            fi
+        fi
+    fi
+  done
+}
+
+git_review() {
+    local worktree=$1
+    local branch=$2
+    local base_branch="${libjobs__stage}"
+    local ancestor=$(diff -u <(git rev-list --first-parent ${branch}) <(git rev-list --first-parent ${base_branch}) |  sed -ne 's/^ //p' | head -1)
+    if [[ -z "$ancestor" ]]; then
+        >&2 echo "KO 65049 branches ${base_branch} and ${branch} are identical or don't share a common ancestor."
+        exit 1
+    fi
+    local numcommits=$(git log --oneline ${base_branch}..HEAD | wc -l)
+    git log --oneline --no-abbrev-commit | grep ${ancestor} -B10000000 > /tmp/review_commits
+    local numcommits_incl_ancestor=$(cat /tmp/review_commits | grep -v '^$' | wc -l)
+    cat << EOF
+review
+------
+branch $libdevtool__branch
+forked from $base_branch hash $ancestor
+numcommits $numcommits
+numcommits_incl_ancestor $numcommits_incl_ancestor
+
+EOF
+    if [[ ${numcommits} -eq 0 ]]; then
+        >&2 echo "KO 88586 Nothing to review."
+        exit 1
+    fi
+    local diff_head=$(cat /tmp/review_commits | head -n1) 
+    local diff_base=$(tac /tmp/review_commits | head -n1) 
+    local hash_head=$(echo "${diff_head}" | awk '{ print $1}')
+    local hash_base=$(echo "${diff_base}" | awk '{ print $1}')
+    local nc=$(cat /tmp/review_commits | wc -l)
+    local num
+    if [[ $nc -ge 2 ]]; then
+        while [[ true ]]; do
+            cat << EOF
+---------------------------------- Review branch ----------------------------------------------
+Commits:
+EOF
+            cat /tmp/review_commits | filter_fn | nl
+            cat << EOF
+Commands:
+  --- git log:
+    n ........................... compare git-log's (${libjobs__stage} vs $branch)
+    r ........................... compare git-log's (${libjobs__ref} vs $branch)
+
+  --- diff between base (b) and head (h):
+    h <1-${nc}> ................. set head
+    b <1-${nc}> ................. set base
+    d ........................... open diff tool (meld) showing diff between base and head.
+
+  --- Other commands:
+    deploy ...................... reconfigure SS and host + makde deploy.
+    shell ....................... Enter shell in worktree.
+    x ........................... Exit.
+
+EOF
+            echo -n "Input: "
+            read -r cmdline
+            if [[ "$cmdline" == "h "* ]]; then
+                num=$(echo "$cmdline" | awk '{ print $2 }')
+                if [[ $? -ne 0 ]]; then
+                    >&2 echo "KO 77869 "
+                    exit
+                fi
+                local h0=$(cat /tmp/review_commits | head -n$num | tail -n1 | awk '{ print $1 }')
+                cat /tmp/review_commits | grep "^$hash_base " -B10000000 | grep -v "^$hash_base " | grep "^$h0 " > /dev/null
+                if [[ $? -ne 0 ]]; then
+                    >&2 echo "KO 68858 head cannot be neither the base nor older."
+                    continue
+                fi
+                hash_head="$(cat /tmp/review_commits | grep "^$h0 " | awk '{ print $1 }')" #make sure the hash is after base
+            elif [[ "$cmdline" == "b "* ]]; then
+                num=$(echo "$cmdline" | awk '{ print $2 }')
+                if [[ $? -ne 0 ]]; then
+                    >&2 echo "KO 77879 "
+                    exit
+                fi
+                local b0=$(cat /tmp/review_commits | head -n$num | tail -n1 | awk '{ print $1 }')
+                cat /tmp/review_commits | grep "^$hash_head " -A10000000 | grep -v "^$hash_head " | grep "^$b0 " > /dev/null
+                if [[ $? -ne 0 ]]; then
+                    >&2 echo "KO 68859 base cannot be neither the head or newer."
+                    continue
+                fi
+                hash_base=$(cat /tmp/review_commits | grep "^$b0 " | awk '{ print $1 }')
+            elif [[ "$cmdline" == "dt" ]]; then
+                cat << EOF
+Add this to .git/config
+=======================================================
+[diff]
+    tool = meld
+[difftool]
+    prompt = false
+[difftool "meld"]
+    cmd = meld "\$LOCAL" "\$REMOTE"
+=======================================================
+
+EOF
+                git difftool ${hash_base} ${hash_head}
+            elif [[ "$cmdline" == "d" ]]; then
+                local temp_dir=$(mktemp -d "/tmp/meld8918_XXXXXX")
+                git worktree add --detach ${temp_dir}/base ${hash_base}
+                git worktree add --detach ${temp_dir}/head ${hash_head}
+                meld ${temp_dir}/base ${temp_dir}/head
+                git worktree remove -f ${temp_dir}/base
+                git worktree remove -f ${temp_dir}/head
+                rm -rf ${temp_dir}
+            elif [[ "$cmdline" == "n" ]]; then
+                pushd ${libjobs__root_worktree}/jobs_stage > /dev/null
+                     git log --oneline > /tmp/next_ref
+                popd > /dev/null
+                pushd ${worktree} > /dev/null
+                     git log --oneline > /tmp/job
+                popd > /dev/null
+                meld /tmp/next_ref /tmp/job
+                rm -f /tmp/next_ref
+                rm -f /tmp/job
+            elif [[ "$cmdline" == "r" ]]; then
+                pushd ${libjobs__root_worktree}/ref > /dev/null
+                     git log --oneline > /tmp/ref
+                popd > /dev/null
+                pushd ${worktree} > /dev/null
+                     git log --oneline > /tmp/job
+                popd > /dev/null
+                meld /tmp/ref /tmp/job
+                rm -f /tmp/ref
+                rm -f /tmp/job
+            elif [[ "$cmdline" == "deploy" ]]; then
+                bin/configure reconfigure || exit 1
+                prebuild_options
+                make clean_cache || exit 1
+                make deploy || exit 1
+                echo "worktree has been deployed"
+            elif [[ "$cmdline" == "shell" ]]; then
+                ibash "$wdir" "$branch" "$job"
+            elif [[ "$cmdline" == "x" ]]; then
+                break
+            else
+                >&2 echo "KO 55040 "
+                exit 1
+            fi
+        done
+    fi
+}
+
+prepare_review_request() {
+    local job=$1
+    echo "" > /tmp/showcase
+    local rr_id="${dev_handle}-RR-$(date +%s)"
+    if [[ $job -eq 0 ]]; then
+        echo "########################################################################################################"
+        echo "## Your current jobs are: "
+        echo "########################################################################################################"
+        libjobs__print_taken | sed 's~\(.*\)~## \1~'
+        echo "########################################################################################################"
+        local prompt_ticket="Are tickets updated?"
+    else
+        libjobs__load_job_vars $job
+        echo "WA 30292 Go to file >>> ${job_url} <<< and add an update."
+        echo "Active job:"
+        libjobs__print_job $job
+        local prompt_ticket="Is ticket ${job} updated? "
+    fi
+    echo
+    echo "  Make sure the tickets/jobs listed abobe are updated with progress/status/investigation-notes/strategy/..."
+    echo "  Hint: Have you done a self review? -> Use devtool review before the RR."
+    echo
+    local is_job_updated=""
+    while [[ "_$is_job_updated" == "_" ]]; do
+        echo -n "${prompt_ticket} [yes|reason]: "
+        read -r is_job_updated
+        if [[ "_$is_job_updated" != "_" ]]; then
+            break
+        fi
+    done
+    local branchx="${branch}"
+    while [[ "_$branchx" == "_" ]]; do
+        echo "branch [${branchx}|reason]: "
+        read -r branchx
+        if [[ "_$branchx" != "_" ]]; then
+            break
+        fi
+    done
+    local vm__deploy="$(vm_dev ${dev_handle})"
+    local vm__deploy__reason=""
+    local vm__deployx=""
+    while [[ "_$vm__deployx" == "_" ]]; do
+        echo -n "Is ${branch} deployed on ${vm__deploy}? [yes|reason]: "
+        read -r vm__deployx
+        if [[ "_$vm__deployx" == "_" ]]; then
+            continue
+        fi
+        if [[ "_$vm__deployx" != "_yes" ]]; then
+            vm__deploy="0"
+            vm__deploy__reason="${vm__deployx}"
+        fi
+        break
+    done
+    local mainurl="https://${dev_handle,,}.cto.script.tv"
+    while [[ true ]]; do
+        echo -n "is ${mainurl} available? [yes|reason/more accurate URL]: " 
+        read -r url_availablex
+        if [[ "_$url_availablex" == "_" ]]; then
+            continue
+        fi
+        if [[ "_$url_availablex" != "_yes" ]]; then
+            url_available="no"
+            url_available__reason="${url_availablex}"
+        else
+            url_available="yes"
+            url_available__reason=""
+        fi
+        break
+    done
+
+    local intent="merge into ${libjobs__ref}"
+    while [[ true ]]; do
+        echo "requested review level:"
+        echo -n "Your intention is ... [${intent}]: " 
+        read -r intent0
+        if [[ -n "_$intent0" ]]; then
+            intent="$intent0"
+        fi
+        break
+    done
+
+    echo "Showcase - Guide the reviewer!"
+    echo "Instructions to perform the verification of the job done, steps, ... [end with CTRL+D]: "
+    IFS= read -d "$(echo -e '\004')" showcase
+    echo
+    echo "OK Thanks for the inputs."
+    echo "NEW Review-Request: ${rr_id}."
+    r2r_dev2dev__dev__hdr "${dev_handle}" "review_request" > /tmp/message
+    cat << EOFX >> /tmp/message
+arg id ${rr_id}
+arg is_job_updated ${is_job_updated}
+arg devjob ${dev_handle} ${active_job}
+arg rep ${rep}
+arg branch ${branchx}
+arg base_branch ${libjobs__stage}
+arg vm ${vm__deploy} R ${vm__deploy__reason}
+arg url ${mainurl} A ${url_available} R ${url_reason}
+arg build_conf
+$(report_configuration cfg_ss.env)
+eof
+arg deploy_conf
+$(report_configuration cfg_hosts.env)
+eof
+arg intention $intention
+arg showcase
+${showcase}
+eof
+arg jobs
+EOFX
+    libjobs__print_job $job >> /tmp/message
+    cat << EOFX >> /tmp/message
+eof
+EOFX
+}
+
+ensure_worktree_removed__by_branch() {
+    local branch="$1"
+    if [[ -z "$branch" ]]; then
+        echo "KO 33928"
+        exit 1
+    fi
+    local path=$(git worktree list --porcelain | awk -v b="$branch" '
+        $1 == "branch" && $2 == ("refs/heads/" b) { print p }
+        { if ($1 == "worktree") p = $2 }
+    ')
+    if [[ -z "$path" ]]; then
+        return
+    fi
+    echo -n "Worktree found at $path: remove? [Enter to continue, Ctrl+C to abort]: "
+    local x
+    read x
+    chmod +w "$path" -R   #go leaves only-readable directories that cannot be deleted
+    git worktree remove $path || {
+        echo "git worktree remove $path didn't work."
+        echo -n "try --force? [Enter to continue, Ctrl+C to abort]: "
+        local a
+        read a
+        git worktree remove -f "$path" || { >&2 echo "KO 50557"; exit 1; }
+    }
+}
+
+review_request() {
+    local branch=$1
+    local job=$2
+    if [[ -z "$branch" ]]; then
+        >&2 echo "KO 21092 Missing branch."
+        exit 1
+    fi
+    if [[ -z "$job" ]]; then
+        >&2 echo "KO 21093 Missing job."
+        exit 1
+    fi
+    prepare_review_request $job
+    libdevtool__deliver_msg "👀 REVIEW REQUEST" /tmp/message 
+    rm /tmp/message
+}
+
+coach_request() {
+    local job=$1
+    if [[ -z "$job" ]]; then
+        >&2 echo "KO 21092 Missing job number."
+        exit 1
+    fi
+    local cr_id="${dev_handle}-CR-$(date +%s)"
+
+    echo "NEW Coach-Request: ${cr_id}."
+
+    r2r_dev2dev__dev__hdr "${dev_handle}" "coach_request" > /tmp/message
+
+    cat << EOFX >> /tmp/message
+arg id ${cr_id}
+arg devjob ${dev_handle} ${job}
+arg job
+EOFX
+    libjobs__print_job $job >> /tmp/message
+    cat << EOFX >> /tmp/message
+eof
+EOFX
+
+    libdevtool__deliver_msg "👥 COACH REQUEST" /tmp/message 
+    rm /tmp/message
+}
+
+review_feedback() {
+    local rr_id=$1
+    if [[ "_$io_state" != "_in" ]]; then
+        echo "KO 67494 You're not signed in"
+        exit 1
+    fi
+    cat << EOF
+##############################################################
+## dev protocol - review
+##############################################################
+Help:
+
+Code:
+    KO Require corrective action.
+    WA Informational, doesn't require further action.
+    OK Accepted.
+
+3 Args:
+0.- rr_id
+1.- code (KO, WA, OK)
+2.- review: Free-Style.
+##############################################################
+
+EOF
+    echo "Review message"
+    echo "-------------------"
+    local r_id="${dev_handle}-$(date +%s)"
+    if [[ -z $rr_id ]]; then
+        rr_id="XX-000000"
+        echo -n "ref RR: [${rr_id}]: "
+        read -r rr_idx
+        if [[ ! -z $rr_idx ]]; then
+            rr_id=$rr_idx
+        fi
+    fi
+    codex=""
+    echo -n "code [KO,WA,OK]: "
+    read -r codex
+    review=""
+    echo "Review [end with CTRL+D]: "
+    IFS= read -d "$(echo -e '\004')" review
+    echo
+    cat << EOFX > /tmp/message
+SVC 930 REVIEW
+ARG id ${r_id}
+ARG review_request ${rr_id}
+ARG code ${codex}
+ARG review
+${review}
+EOF
+EOFX
+    libdevtool__deliver_msg "REVIEW" /tmp/message 
+    rm /tmp/message
+}
+
+sign_in() {
+    if [[ "_$io_state" == "_in" ]]; then
+        echo "KO 50494 Already signed-in"
+        exit 1
+    fi
+    if [[ ! -f /tmp/signin__greeting ]]; then
+        echo "☕ Good morning team!" > /tmp/signin__greeting
+    fi
+    local greeting="$(cat /tmp/signin__greeting | shuf | head -n1)"
+    local active_job=$(libjobs__active_job)
+    libjobs__load_job_vars $active_job
+    banner__hello
+    echo "########################################################################################################"
+    echo "## Your taken jobs are: "
+    echo "########################################################################################################"
+    libjobs__print_taken | sed 's~^~## ~'
+    echo "########################################################################################################"
+    echo "## Active job:"
+    libjobs__print_job $active_job  | sed 's~^~## ~'
+    echo "########################################################################################################"
+    cat << EOF
+
+Reminders:
+* And add an update if you didn't do it before signing out last day.
+  Go to file: ${job_url} 
+* If you are starting the job it's a good idea to think about it and write about strategy to address the issue,
+  design or initial ideas. Drawings, diagrams or napkins are very welcome.
+  This information add up to our knowledge base and will help when fed to our future AI specially trined for our codebase.
+* Make sure the tickets listed above are up to date with your last day. progress/status/investigation/notes."
+* If you want to change the active job ctrl-c + bin/devtool chjob
+* If you want to add/remove jobs ctrl-c + bin/devtool take/release
+
+EOF
+    echo -n "Continue? [Enter to continue, Ctrl+C to abort]: "
+    read x
+    r2r_cto2dev__help_svc_signin
+    echo "NEW Sign-In message"
+    echo "-------------------"
+    echo -n "Greeting [${greeting}]: "
+    read -r greetingx
+    if [[ "_$greetingx" != "_" ]]; then
+        echo "$greetingx" >> /tmp/signin__greeting
+        greeting=$greetingx
+    fi
+    echo "Punchphrase [EOT=ctrl+d]: "
+    IFS= read -d "$(echo -e '\004')" punchphrase
+    echo
+    r2r_cto2dev__dev__hdr "${dev_handle}" "signin" > /tmp/message
+    cat << EOFX >> /tmp/message
+arg greeting ${greeting}
+arg punchphrase
+${punchphrase}    
+eof
+arg jobs
+$(libjobs__print_taken)
+eof
+arg active_job ${active_job}
+EOFX
+    libdevtool__deliver_msg "🟢 SIGN-IN" /tmp/message 
+    rm /tmp/message
+    io_state="in"
+    stcfg__set_value "io_state" "${io_state}" 0
+}
+
+sign_out() {
+    if [[ "_$io_state" == "_out" ]]; then
+        echo "KO 50334 You've already signed out."
+        exit 1
+    fi
+    if [[ ! -f /tmp/signout__greeting ]]; then
+        echo "Bye team 👋!" > /tmp/signout__greeting
+    fi
+    greeting="$(cat /tmp/signout__greeting | shuf | head -n1)"
+    banner__bye
+    r2r_cto2dev__help_svc_signout
+    echo "NEW Sign-Out message"
+    echo "--------------------"
+    echo -n "Input greeting. [${greeting}]: "
+    read -r greetingx
+    if [[ "_$greetingx" != "_" ]]; then
+        echo "$greetingx" >> /tmp/signout__greeting
+        greeting=$greetingx
+    fi
+    r2r_cto2dev__dev__hdr "${dev_handle}" "signout" > /tmp/message
+    cat << EOFX >> /tmp/message
+arg greeting ${greeting}
+EOFX
+    libdevtool__deliver_msg "🔴 SIGN-OUT" /tmp/message 
+    rm /tmp/message
+    io_state="out"
+    stcfg__set_value "io_state" "${io_state}" 0
+}
+
+rn__ensure_section_jobs() {
+    local file=$1
+    let f=0
+    while read -r line; do
+        if [[ $f -eq 0 ]]; then
+            echo "$line" | grep "^### jobs" > /dev/null
+            if [[ $? -eq 0 ]]; then
+                return 0
+            fi
+        fi
+    done < "$file"
+    cat << EOF > /tmp/reviewme.33845
+# Release Notes. Script.tv
+
+### jobs
+
+* [1-liner items here]
+EOF
+    cat doc/release_notes.md | grep -v "^# Release Notes" >> /tmp/reviewme.33845
+    mv /tmp/reviewme.33845 $file
+}
+
+extract_release_notes_jobs() {
+    let f=0
+    while read -r line; do
+        if [[ $f -eq 0 ]]; then
+            echo "$line" | grep "^### jobs" > /dev/null
+            if [[ $? -eq 0 ]]; then
+                let f=1
+                echo "$line"
+            fi
+        elif [[ $f -eq 1 ]]; then
+            echo "$line" | grep "^### " > /dev/null
+            if [[ $? -eq 0 ]]; then
+                break
+            else
+                echo "$line"
+            fi
+        fi
+    done < doc/release_notes.md
+}
+
+reset_dev_handle() {
+    dev_handle=XX
+    dev_branch="XX/main"
+    stage_branch="XX/stage"
+    devuser=xx
+}
+
+on_change_dev_handle() {
+    local save=$1
+    if [[ "_${dev_handle}" != "_" ]]; then
+        devuser=${dev_handle,,}
+    else
+        reset_dev_handle
+    fi
+    if [[ "_${save}" == "_1" ]]; then
+        stcfg__set_value "dev_handle" "${dev_handle}" ${verbose}
+        stcfg__set_value "dev_branch" "${dev_branch}" ${verbose}
+        stcfg__set_value "stage_branch" "${stage_branch}" ${verbose}
+    fi
+    libconfigure__set_dev ${dev_handle}
+    if [[ "_${devuser}" == "_xx" ]]; then
+        vm__ci=""
+        my_vm__test=""
+        my_vm__node=""
+        my_vm__testnet__node=""
+    else
+        vm__ci="$(vm_ci ${dev_handle})"
+        my_vm__test="$(vm_dev ${dev_handle})"
+        my_vm__node="$(vm_nod ${dev_handle})"
+        my_vm__testnet__node="$(vm_tn ${dev_handle})"
+    fi
+    libdevtool__init2
+}
+
+set__dev_handle() {
+    local dev=$1
+    local save=$2
+    if [[ "_${dev}" == "_" ]]; then
+        reset_dev_handle
+        on_change_dev_handle ${save}
+        return
+    fi
+    dev_handle=${dev^^}
+    dev_branch="${dev_handle}/main"
+    devuser=${dev_handle,,}
+    if [[ "_${#dev_handle}" != "_2" ]]; then
+        >&2 echo "KO 93993 Invalid dev_handle ${dev_handle}. Ignoring."
+        reset_dev_handle
+    fi
+    on_change_dev_handle ${save}
+}
+
+new_user() {
+    local dev=$1
+    if [[ "_${dev}" == "_" ]]; then #interactive
+        cat << EOF
+
+Welcome to the ${merger_handle} team!
+
+EOF
+        echo -n "Enter your dev_handle [e.g. MM]: "
+        read dev
+    fi
+    set__dev_handle "${dev}" 1
+    if [ $dev_handle == XX ]; then
+        echo "Forgotten. I don't know who you are."
+    else
+        echo "OK. You are $dev_handle."
+    fi
+}
+
+user__CA_keys() {
+    find ${dev_secrets_root}/ca -type f -name "*.key"
+}
+
+devtool__create_CA_cert() {
+    local domain=$1
+    if [[ -z "$domain" ]]; then
+        local ca_domain=${root_ca__domain}
+        local domain="${dev_handle,,}.${ca_domain}"
+    else
+        local domain="$1"
+        local ca_domain=$(echo ${domain} | tr '.' ' ' | cut -d " " -f 2- | tr ' ' '.')
+    fi
+    echo "Using domain: $domain"
+    echo "Using ca_domain: $ca_domain"
+    echo "Producing CA-cert for ${domain}."
+    if [[ $(libcrypto__can_sign_CSR ${ca_domain}) == "true" ]]; then
+        libcrypto__gen_CA_cert0 ${domain} ${ca_domain}
+        local pub_cert_file=$(libcrypto__ca_cert__file_for ${domain})
+        local key_file=$(libcrypto__ca_cert__key__file_for ${domain})
+        if [[ ! -f ${key_file} ]]; then
+            >&2 echo "KO 81970 Secret key for domain ${domain} not found at ${key_file}. pub_cert_file ${pub_cert_file}"
+            exit 1
+        fi
+        return
+    fi
+    echo "Querying cert..."
+    libdevtool__query_cert "${domain}" "${ca_domain}" ${pub_cert_file}
+    echo "Received cert at ${pub_cert_file}"
+}
+
+user__create_CA_cert() {
+    local domain=$1
+    if [[ ! -z "$domain" ]]; then
+        let n=1
+        devtool__create_CA_cert ${domain}
+    else
+        return 0  #create_CA_cert is automatic for dev domain on lib init
+    fi
+}
+
+user__create_p2p_CA_cert() {
+    local domain=$1
+    if [[ ! -z "$domain" ]]; then
+        let n=1
+    fi
+    if [[ -z "$domain" ]]; then
+        local ca_domain=${root_ca__domain}
+        local domain="${dev_handle,,}.${ca_domain}"
+    else
+        local domain="$1"
+        local ca_domain=$(echo ${domain} | tr '.' ' ' | cut -d " " -f 2- | tr ' ' '.')
+    fi
+    devtool__create_CA_cert "p2p.${domain}"
+    local src_crt=$(libcrypto__ca_cert__file_for "p2p.${domain}")
+    local src_key=$(libcrypto__ca_cert__key__file_for "p2p.${domain}")
+    if [[ ! -f ${src_crt} ]]; then
+        >&2 echo "KO 33029"
+        exit 1
+    fi
+    if [[ ! -f ${src_key} ]]; then
+        >&2 echo "KO 33028"
+        exit 1
+    fi
+    echo "Providing be/b2c with CA-certs" 
+    echo "produced files:"
+    #mainnet
+    local b2c_build_secrets_dir="${secrets_root}/be/b2c/mainnet/genesis/ca"
+    mkdir -p ${b2c_build_secrets_dir}
+    cp ${src_crt} ${b2c_build_secrets_dir}/
+    cp ${src_key} ${b2c_build_secrets_dir}/
+    find ${b2c_build_secrets_dir} -type f
+    #testnet
+    local b2c_build_secrets_dir="${secrets_root}/be/b2c/testnet/genesis/ca"
+    mkdir -p ${b2c_build_secrets_dir}
+    cp ${src_crt} ${b2c_build_secrets_dir}/
+    cp ${src_key} ${b2c_build_secrets_dir}/
+    find ${b2c_build_secrets_dir} -type f
+}
+
+user__view_cert() {
+    local file=$1
+    n=1
+    openssl x509 -inform pem -noout -text -in ${file}
+}
+
+user__create_SSL_cert() {
+    local domain=$1
+    n=1
+    local ssl_certs="${secrets_root}/ssl/certs"
+    local cert_file=$(libcrypto__ssl_cert__file_for $domain)
+    local key_file=$(libcrypto__ssl_cert__key__file_for ${domain})
+    cat << EOF
+cert_file=${cert_file}
+key_file=${key_file}
+
+EOF
+    libcrypto__create_ssl_cert "${domain}" "${domain}"
+    if [[ ! -f ${cert_file} ]]; then
+        >&2 echo "KO 20196 ${cert_file} has not been produced."
+        exit 1
+    fi
+}
+
+user__sign_CSR() {
+    in_file=$1
+    if [ -z "$in_file" ]; then
+        echo "Sign CSR"
+        in_file=/tmp/tmp_csr229
+        rm -f ${in_file}
+        while [[ true ]]; do
+            echo "Paste CSR here, then press CTRL+D to continue."
+            echo "" > ${in_file}
+            while read -r line; do
+                echo "$line" >> ${in_file}
+            done
+            if [[ -f ${in_file} ]]; then
+                break
+            else
+                echo "${in_file} is missing."
+                continue
+            fi
+        done
+    else
+        n=1
+    fi
+    domain=$(cat ${in_file} | grep -v "^#" | grep "^domain " | awk '{print $2}')
+    ca_domain=$(cat ${in_file} | grep -v "^#" | grep "^ca_domain " | awk '{print $2}')
+    csr=$(cat ${in_file} | grep -v "^#" | grep "^CSR " | awk '{print $2}')
+    cfg=$(cat ${in_file} | grep -v "^#" | grep "^CFG " | awk '{print $2}')
+    local crt__file=ca/${domain}__CA.crt
+    echo $csr | base64 -d > /tmp/csr773
+    echo $cfg | base64 -d > /tmp/cfg773
+    echo "domain $domain"
+    echo "ca_domain $ca_domain"
+    echo CSR:
+    cat /tmp/csr773
+    echo CFG:
+    cat /tmp/cfg773
+    if [[ $(libcrypto__can_sign_CSR "${ca_domain}") != "true" ]]; then
+        >&2 echo "KO 30299 Unable to sign for ${ca_domain}"
+        exit 1
+    fi
+    echo "${CA_crt__key} exist, signing ca_cert."
+    libcrypto__sign_CSR "${domain}" "${ca_domain}" /tmp/csr773 /tmp/cfg773 ${crt__file}
+    if [[ $? -ne 0 ]]; then
+        exit 1
+    fi
+    rm -f /tmp/csr773
+    rm -f /tmp/cfg773
+    echo "OK ${crt__file}"
+}
+
+split_CA_cert() {
+    local ca_domain=$1
+    local input_file="ca/${ca_domain}__CA.crt"
+    local output_prefix="ca/${ca_domain}__CA__part_"
+    local count=1
+    local certificate=""
+    while IFS= read -r line; do
+        if [[ "$line" == "-----BEGIN CERTIFICATE-----" ]]; then
+            certificate="$line"$'\n'
+        elif [[ "$line" == "-----END CERTIFICATE-----" ]]; then
+            certificate+="$line"$'\n'
+            echo "$certificate" > "${output_prefix}${count}.crt"
+            count=$((count + 1))
+            certificate=""
+        else
+            certificate+="$line"$'\n'
+        fi
+    done < "$input_file"
+}
+
+user__check_own_CA_cert() {
+    n=1
+    local ca_domain=$1
+    split_CA_cert ${ca_domain}
+    local CA_crt__file=${libcrypto__ca_pub_dir}/${ca_domain}__CA.crt
+    local CA_crt__key=${libcrypto__ca_secret_dir}/${ca_domain}__CA.key
+    local hashkey=$(openssl rsa -noout -modulus -in ${CA_crt__key} | openssl md5 | awk '{ print $2}') # Extract modulus from the private key
+    local found=false
+    while read -r line; do
+        hashpart=$(openssl x509 -noout -modulus -in "$line" | openssl md5 | awk '{ print $2}')
+        if [[ $hashpart == $hashkey ]]; then
+            echo "OK ${line} matches secret key" 
+            found=yes
+            break
+        fi
+    done < <(ls -1 ca/${ca_domain}__CA__part*)
+    if [[ $found == false ]]; then
+        num=$(ls -1 ca/${ca_domain}__CA__part* | wc -l)
+        echo "KO Secret key"
+        echo "   ${CA_crt__key}"
+        echo "doesn't match any of the ${num} parts of cert"
+        echo "   ${CA_crt__file}"
+    fi
+    rm ca/${ca_domain}__CA__part_*
+}
+
+user__split_CA_cert() {
+    let n=1
+    split_CA_cert $1
+    echo "Certificates have been extracted into ${output_prefix}1.crt, ${output_prefix}2.crt, etc."
+}
+
+check_current_branch() {
+    local branch=$1
+    local current_branch
+    current_branch=$(git rev-parse --abbrev-ref HEAD)
+    if [[ "$current_branch" == "$branch" ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+devjob_merged() {
+    local dev=$1
+    local job=$2
+    local src_branch=$3
+    local dst_branch=$4
+    r2r_dev2dev__dev__hdr "${dev_handle}" "merged" > /tmp/message   #send to team
+    cat << EOF >> /tmp/message
+src_branch ${src_branch}
+dst_branch ${dst_branch}
+dst_conduct $(branch_conduct ${dst_branch})
+dev $dev
+job $job
+jobhead
+EOF
+    libjobs__print_job $job >> /tmp/message
+    cat << EOF >> /tmp/message
+eof
+release_notes
+EOF
+    cat /tmp/diffrn  >> /tmp/message
+    rm -f /tmp/diffrn
+    echo "eof" >> /tmp/message
+    cat << EOF >> /tmp/message
+hint $dev, if you are done with this job you can safely release it.
+hint_cmd \`dt release $job\` 
+EOF
+    libdevtool__deliver_msg "📄 MERGE. ${src_branch} merged into ${dst_branch}. Thank you $dev!." /tmp/message
+    rm /tmp/message
+}
+
+release_notes__from_jobs_to_main() {
+        cat doc/release_notes.md | grep "^### jobs" -A1000 | grep "^### main" -B1000 | grep "^\* " > /tmp/items_jobs
+        local stageline=$(cat doc/release_notes.md  | grep "^### main" -A100 | grep -v "^### main" | grep "^### " | head -n1)
+        cat doc/release_notes.md | grep "^### main" -A1000 | grep "^${stageline}" -B1000 | grep "^\* " > /tmp/items_main
+        cat doc/release_notes.md | grep "^${stageline}" -A10000000 > /tmp/items_stageprod
+
+        cat << EOF > doc/release_notes.md
+# Release Notes. Script.tv
+
+### main
+
+EOF
+        cat  /tmp/items_main >> doc/release_notes.md
+        cat  /tmp/items_jobs >> doc/release_notes.md
+        echo >> doc/release_notes.md
+        cat  /tmp/items_stageprod >> doc/release_notes.md
+        rm /tmp/items_jobs
+        rm /tmp/items_main
+        rm /tmp/items_stageprod
+}
+
+branch_conduct() {
+    if [[ "$1" == "${libjobs__stage}" ]]; then
+        echo "unstable"
+    elif [[ "$1" == "${libjobs__ref}" ]]; then
+        echo "testing"
+    else
+        echo "unknown"
+    fi
+}
+
+updated_ref() {
+    local dst_branch=$1
+    local rnfile=$2
+    local conduct="$(branch_conduct ${dst_branch})"
+
+    r2r_dev2dev__dev__hdr "${dev_handle}" "ref_updated: ${dst_branch}" > /tmp/message   #send to team
+
+    cat << EOFX >> /tmp/message
+dst_branch ${dst_branch}
+conduct ${conduct}
+jobs
+eof
+arg release_notes
+EOFX
+    cat ${rnfile} >> /tmp/message
+
+    echo "eof" >> /tmp/message
+    cat << EOF >> /tmp/message
+hint sync forks of ${dst_branch}.
+hint_cmd \`dt sync\` 
+EOF
+
+    libdevtool__deliver_msg "🔃 REF UPDATED" /tmp/message
+    rm /tmp/message
+}
+
+review_self_branch() {
+    local branch=$1
+    local job=$2
+    local wdir=$(pwd)
+    review_main_loop ${wdir} ${job} ${branch}
+}
+
+prebuild_options() {
+    invoke_fetch_data
+}
+
+ibash() {
+    local dir="$1"
+    local branch="$2"
+    local job="$3"
+    echo "Entering interactive shell..."
+    bash --rcfile <(cat << EOF
+cd $dir
+export PS1="REVIEW:\\w\$ "
+cat << IEOF
+$(libjobs__print_job $job "    ")
+IEOF
+echo "At dir $dir"
+echo "Type 'exit' to return back to the review."
+echo
+
+EOF
+    )
+    echo "Returning to the review.."
+}
+
+invoke_fetch_data() {
+    echo "Fetching data from subsystems"
+    echo "Do you require to fetch data from running subsystems?"
+
+    while true; do
+        local ss
+        local n
+        n=0
+        for ss in $(libdotool__print_subsystems); do
+            pushd $ss > /dev/null
+                if [[ -x bin/fetch_data ]]; then
+                    ((n++))
+                    echo "    $n:   $ss - Invoke bin/fetch_data stage"
+                fi
+            popd > /dev/null
+        done
+        if [[ $n -eq 0 ]]; then
+            return
+        fi
+        echo "    0:   continue"
+        echo
+        echo -n "Enter option [0]: "
+        local x
+        read x
+        if [[ -z "$x" ]]; then
+            x="0"
+        fi
+        if [[ "$x" == "0" ]]; then
+            echo "done fetch"
+            return
+        fi
+        n=0
+        for ss in $(libdotool__print_subsystems); do
+            pushd $ss > /dev/null
+                if [[ -x bin/fetch_data ]]; then
+                    ((n++))
+                    if [[ "$n" == "$x" ]]; then
+                        echo "Executing \"bin/fetch_data stage\" in SS $ss" 
+                        bin/fetch_data stage
+                    fi
+                fi
+            popd > /dev/null
+        done
+    done
+    return 0
+}
+
+review_main_loop() {
+    local wdir="$1"
+    local job="$2"
+    local branch="$3"
+    pushd "$wdir" > /dev/null
+        git_review "$wdir" "$branch"
+    popd > /dev/null
+}
+
+# ============================================================================================================================================================================================================================
+
+review_others_branch() {
+    local worktree_prefix=$1
+    local branch=$2
+    local job=$3
+    if [[ "$branch" == "${dev_handle}/"* ]]; then
+        >&2 echo "KO 65094"
+        exit 1
+    fi
+    local wdir=${libjobs__root_worktree}/${worktree_prefix}/${branch}
+    ensure_worktree_removed__by_branch ${branch}
+    echo "other's branch"
+    echo "deleting local branch ${branch}"
+    git branch -D ${branch} >/dev/null 2>&1
+    git fetch origin "${branch}" || { >&2 echo "KO 65306 git fetch origin ${branch} failed"; exit 1; }
+    rm -rf "$wdir"
+    echo "creating new worktree for branch ${branch}"
+    git worktree add "${wdir}" ${branch} || { >&2 echo "KO 54032 git worktree add "${wdir}" ${branch}"; exit 1; }
+    echo "entering worktree... $wdir"
+    pushd ${wdir} > /dev/null
+        echo "last 10 commits before rebasing"
+        git log --oneline | head -n10 | sed 's~^~    ~'
+        echo "rebasing ${branch} onto ${libjobs__stage}"
+        git rebase ${libjobs__stage} || {
+            git rebase --abort
+            >&2 echo "KO 31004 unmergeable branch. $branch is not rebased from ${libjobs__stage}."
+            exit 1
+        }
+    popd > /dev/null
+    review_main_loop ${wdir} ${job} ${branch}
+    git worktree remove -f ${wdir} || { >&2 echo "KO 43091"; exit 1; }
+    echo "deleting local branch ${branch}"
+    git branch -D ${branch} || { >&2 echo "KO 65005"; exit 1; }
+
+    echo "Next: dt merge_job $branch"
+}
+
+merge_devjob() {
+    libjobs__cancel_uncommited
+    local worktree_prefix=$1
+    local branch=$2
+    local wdir=${libjobs__root_worktree}/${worktree_prefix}/${branch}
+    if [[ "$branch" != "${dev_handle}/"* ]]; then
+        echo "deleting local branch ${branch}"
+        git branch -D ${branch} >/dev/null 2>&1
+        git fetch origin ${branch} || { >&2 echo "KO 65006 git fetch origin ${branch} failed"; exit 1; }
+    fi
+    echo "creating new worktree for branch ${branch}"
+    git worktree add "${wdir}" ${branch} || { >&2 echo "KO 54032 git worktree add "${wdir}" ${branch}"; exit 1; }
+    pushd ${wdir} > /dev/null || { 2>&1 echo "KO 54039 pushd ${wdir}"; exit 1; }
+        echo "rebasing $branch onto ${libjobs__stage}"
+        git rebase ${libjobs__stage}
+        if [[ $? -ne 0 ]]; then
+            git rebase --abort
+            >&2 echo "At ${wdir}"
+            >&2 echo "KO 33004 unmergeable branch. $branch was not rebased onto ${libjobs__stage} and auto-rebase failed."
+            exit 1
+        fi
+    popd > /dev/null
+    echo "Merging $branch"
+    git merge $branch
+    if [[ $? -ne 0 ]]; then
+        >&2 echo "KO 33005 Merge errors"
+        >&2 echo "fix pwd $(pwd) or run git merge --abort"
+        >&2 echo "Once in good state run the command again to complete release notes"
+        exit 1
+    fi
+    cp doc/release_notes.md /tmp/mr_rn
+    rn__ensure_section_jobs /tmp/mr_rn
+    echo "Edit jobs section..."
+    nano /tmp/mr_rn
+    mv /tmp/mr_rn doc/release_notes.md  #replace downstream version
+    git diff doc/release_notes.md | grep "^\+\* " | sed 's~^\+\* ~\* ~' > /tmp/diffrn
+    echo "-----"
+    echo "Diff RN"
+    cat /tmp/diffrn
+    echo "-----"
+    git add doc/release_notes.md
+    if ! git diff --cached --quiet; then
+        git commit -m "📄 RN - ${dev_handle} merged ${branch} into ${libjobs__stage}" || { >&2 echo "KO 44039 commit release notes failed"; exit 1; }
+    else
+        echo "WA 20192 No changes in release notes."
+    fi
+    git worktree remove "${wdir}"
+}
+
+review_help() {
+        cat << EOF
+dt review [<dev> <job>|<branch>] ................... <devjob>=<dev_handle> <job>; empty=this context
+e.g. dt review XX 123         # devjob
+e.g. dt review 123            # job
+e.g. dt review XX/main        #branch
+e.g. dt review                #branch
+
+EOF
+}
+
+merge_help() {
+        cat << EOF
+dt merge <devjob> ................... <devjob>=<dev_handle> <job>
+e.g. dt merge XX 123
+
+EOF
+}
+
+merge_job_help() {
+        cat << EOF
+dt merge_job [<dev> <job>|<branch>] ................... <devjob>=<dev_handle> <job>; empty=this context
+e.g. dt merge_job XX 123         # devjob
+e.g. dt merge_job 123            # job
+e.g. dt merge_job XX/main        #branch
+
+EOF
+}
+
+merge_request() {
+    r2r_dev2dev__dev__hdr "${dev_handle}" "merged" > /tmp/message
+    cat << EOFX >> /tmp/message
+branch ${branch}
+arg release_notes
+EOFX
+    extract_release_notes_merge ${libjobs__main} >> /tmp/message
+    cat << EOFX >> /tmp/message
+eof
+hint Please update your reference branch.
+hint_command dt sync
+EOFX
+    echo "eof" >> /tmp/message
+    libdevtool__deliver_msg "🔃 REF UPDATE" /tmp/message
+    rm /tmp/message
+}
+
+backlog__manual_checklist() {
+    cat << EOF
+TODO: github automation here
+Manual mode:
+Checklist:
+    Set flags:
+     * 'merged / fixed. Closed when deployed' or 'improved'
+
+EOF
+}
+
+branch_exists() {
+    local branch="$1"
+    git show-ref --verify --quiet "refs/heads/$branch"
+}
+
+worktree_exists() {
+    local wt="$1"
+    git show-ref --verify --quiet "refs/heads/$branch"
+}
+
+report_configuration() {
+    local file="$1"
+    if [[ -L "$file" ]]; then
+        echo "file $(readlink "$file")"
+    elif [[ -f "$file" ]]; then
+        cat "$file"
+    else
+        >&2 echo "KO 20192 cannot capture build and deploy configureation."
+        exit 1
+    fi
+}
+
+exit_error() {
+    local err="$1"
+    >&2 echo "KO 60594 problems pushing jobs_stage"
+    exit 1
+}
+
+dosync() {
+    if [[ "${merger_handle}" != "${dev_handle}" ]]; then
+        pushd ${libjobs__root_worktree}/ref > /dev/null || { >&2 echo "KO 60593 pushd ref"; exit 1; }
+            echo "pulling ref"
+            git pull
+        popd > /dev/null
+    fi
+    libjobs__sync
+}
+
+# ---------------------------------------------------------------------------------- user__
+
+
+user__push() {
+    pushd ${libjobs__root_worktree}/jobs_stage > /dev/null || { >&2 echo "KO 60593 pushd jobs_stage"; exit 1; }
+        if [[ $flag_force -eq 0 ]]; then
+            check_uncommited  #working files shouldn't exist here
+        fi
+        echo "Rebase jobs_stage onto ${libjobs__ref}"
+        git rebase ${libjobs__ref} || {
+            >&2 echo "pwd $(pwd) "
+            >&2 echo "cmd git rebase ${libjobs__ref}"
+            >&2 echo "KO 61094 "
+            exit 1
+        }
+        echo "pushing ${libjobs__stage}"
+        git push -f -q origin ${libjobs__stage} || { >&2 echo "KO 60594 problems pushing jobs_stage"; exit 1; }
+    popd > /dev/null
+    echo "pushed ${libjobs__stage}"
+}
+
+user__sync() {
+    dosync
+}
+
+user__sign_in() {
+    sign_in
+}
+
+user__sign_out() {
+    sign_out
+}
+
+user__rr() {
+    [[ -z "$2" ]] && { [[ -z "$1" ]] && n=0 || n=1; } || n=2
+    local dev job branch
+    read -r dev job branch <<< "$(parse_input__dev_job_branch $1 $2)"
+    echo "dev $dev" 
+    echo "job $job" 
+    echo "branch $branch" 
+    if [[ "$branch" != "${dev_handle}/"* ]]; then
+        >&2 echo "KO 40302 branch does not match the pattern ${dev_handle}/job_*"
+        exit 1
+    fi
+    dosync
+    pushd ${libjobs__root_worktree}/job_$job > /dev/null || { >&2 echo "KO 54021 ${libjobs__root_worktree}/job_$job not found."; exit 1; }
+        echo "publishing/pushing"
+        git push -f --set-upstream origin ${branch} || {
+            >&2 echo "KO 77604 push failed."
+            exit 1
+        }
+        review_request ${branch} ${job}
+    popd > /dev/null
+    exit $?
+}
+
+user__cr() { # coach request
+    if is_worktree; then
+        >&2 echo "KO 27868"
+        exit 1
+    fi
+    local job=$1
+    if [[ -z "$job" ]]; then
+        job=$(libjobs__active_job)
+    fi
+    coach_request ${job}
+    exit $?
+}
+
+user__deps() {
+    apt=$(libdevtool__deps_runtime__apt | xargs) 
+    echo "sudo apt install -y ${apt}"
+}
+
+user__take() {
+    if [[ ! -z $1 ]]; then
+        n=1
+    fi
+    local job=$1
+    if ! libjobs__is_job $job; then
+        >&2 echo "KO 55049 dt take <job>"
+        exit 1
+    fi
+    libjobs__take $job
+}
+
+user__release() {
+    if [[ ! -z $1 ]]; then
+        n=1
+    fi
+    local number=$1
+    shift
+    libjobs__release $number
+}
+
+user__all() {
+    libjobs__print_all
+}
+
+user__fetch() {
+    if [ -z ${github_access_token} ]; then
+        >&2 echo "KO 60112 github_access_token is unset in file ${dev_secrets_root}/devtool.env"
+        exit 1
+    fi
+    libjobs__fetch
+}
+
+user__invite() {
+    local dev=$1
+    n=1
+    sshline=""
+    echo -n "ssh line. ($dev would need for accessing your environment). [ssh -p22 root@host]: "
+    read -r sshline
+    if [[ -z $sshline ]]; then
+        >&2 echo "KO 922443 ssh line"
+        exit 1
+    fi
+    session="${dev_handle}-${dev}"
+    echo "Invite: bin/devtool join ${dev_handle} \"$sshline\""
+    echo -n "Continue? [Enter to continue, Ctrl+C to abort]: "
+    read x
+    tmux new-session -s "$session" 
+}
+
+user__join() {
+    local dev=$1
+    local sshline="$2"
+    n=1
+    session="${dev}-${dev_handle}"
+    $sshline "tmux attach-session -t \"${session}\""
+}
+
+user__feedback() {
+    local rr_id=$1
+    if [[ -z $rr_id ]]; then
+        review_feedback 
+    else
+        n=1
+        review_feedback ${rr_id}
+    fi
+}
+
+parse_input__dev_job_branch() {
+    local dev
+    local job
+    local branch
+    if [[ -z "$2" ]]; then
+        if [[ -z "$1" ]]; then
+            n=0
+            branch=$libdevtool__branch #(git rev-parse --abbrev-ref HEAD)
+            dev=$(echo "$branch" | sed 's~\(.*\)/\(.*\)~\1~')
+            job=$(echo "$branch" | sed 's~\(.*\)/job_\(.*\)~\2~')
+        else
+            n=1
+            if libjobs__is_job $1; then
+                dev=${dev_handle}
+                job=$1
+                branch=${dev}/job_$job
+            else
+                branch=$1
+                dev=$(echo "$branch" | sed 's~\(.*\)/\(.*\)~\1~')
+                job=$(echo "$branch" | sed 's~\(.*\)/job_\(.*\)~\2~')
+            fi
+        fi
+    else
+        n=2
+        dev=$1
+        job=$2
+        branch=${dev}/job_$job
+    fi
+    echo "$dev $job $branch" 
+}
+
+user__review() {
+    [[ -z "$2" ]] && { [[ -z "$1" ]] && n=0 || n=1; } || n=2
+    local dev job branch
+    read -r dev job branch < <(parse_input__dev_job_branch "$1" "$2")
+    echo "dev $dev" 
+    echo "job $job" 
+    echo "branch $branch" 
+    if [[ "$branch" == "${dev_handle}/"* ]]; then
+        review_self_branch $branch $job
+    else
+        review_others_branch "review" $branch $job
+    fi
+}
+
+user__merge_job() {
+    [[ -z "$2" ]] && { [[ -z "$1" ]] && n=0 || n=1; } || n=2
+    local dev job branch
+    read -r dev job branch <<< "$(parse_input__dev_job_branch $1 $2)"
+    echo "dev $dev" 
+    echo "job $job" 
+    echo "branch $branch" 
+    pushd ${libjobs__root_worktree}/jobs_stage > /dev/null || { >&2 echo "KO 60593 pushd jobs_stage"; exit 1; }
+        echo "Rebase jobs_stage onto ${libjobs__ref}"
+        git rebase ${libjobs__ref} || {
+            >&2 echo "pwd $(pwd) "
+            >&2 echo "cmd git rebase ${libjobs__ref}"
+            >&2 echo "KO 61094 "
+            exit 1
+        }
+        merge_devjob "merge_stage" $branch
+        echo "pushing ${libjobs__stage}"
+        git push
+    popd > /dev/null
+    echo "Next: either > dt backlog close $job.......... Prints checklist for closing a job."
+    echo "          or > dt backlog improved $job....... Prints checklist for flagging the job as improved."
+    devjob_merged "$dev" "$job" "${branch}" "${libjobs__stage}" #send ack message downstream devs
+    echo "Next: dt merge_job .............. Merge another devjob/branch."
+    echo "Next: dt mr ..................... Merge Request. Request branch ${libjobs__main} be merged upstream."
+}
+
+user__merged() {
+    devjob_merged
+}
+
+user__merge_ref() {
+    git worktree list | grep "^${libjobs__root_worktree}/ref " > /dev/null || {
+        echo "creating worktree for ref branch ${libjobs__ref}"
+        git worktree add ${libjobs__root_worktree}/ref ${libjobs__ref}
+    }
+    pushd ${libjobs__root_worktree}/ref > /dev/null || { echo "KO 65092"; exit 1; }
+        git merge ${libjobs__stage} || {
+            >&2 pwd
+            >&2 echo "KO 66068 git merge ${libjobs__stage}"
+            exit 1
+        }
+        extract_release_notes_jobs >> /tmp/jobsstage
+        release_notes__from_jobs_to_main
+        git add doc/release_notes.md
+        if ! git diff --cached --quiet; then
+            git commit -m "🔀 RN - ${libjobs__stage} -> ${libjobs__ref}" || { >&2 echo "KO 44029 commit release notes failed"; exit 1; }
+        else
+            echo "WA 20191 No changes in release notes."
+        fi
+        git push || { >&2 echo "KO 66069 pushing ${libjobs__root_worktree}/ref"; exit 1; }
+    popd > /dev/null
+    updated_ref ${libjobs__ref} /tmp/jobsstage #send call-for-rebase downstream devs
+    rm -f /tmp/jobsstage
+    pushd ${libjobs__root_worktree}/jobs_stage > /dev/null || { >&2 echo "KO 60293 pushd jobs_stage"; exit 1; }
+        echo "Rebase jobs_stage onto ${libjobs__ref}"
+        git rebase ${libjobs__ref} || {
+            >&2 echo "pwd $(pwd) "
+            >&2 echo "cmd git rebase ${libjobs__ref}"
+            >&2 echo "KO 65694 "
+            exit 1
+        }
+    popd > /dev/null
+    echo "ok ${libjobs__stage} and ${libjobs__ref} have been updated and published (pushed)."
+}
+
+user__mr() {
+    >&2 echo "KO 20192 not implemented."
+    exit 1
+    merge_request   #team lead. request for upstream merge of already merged jobs XX/stage 
+}
+
+user__request_vm() {
+    cat << EOF
+Input:
+    os: debian
+    type: small
+    Use: dev
+    region:
+EOF
+    >&2 echo "KO 69583 Not implemented."
+    exit 1
+}
+
+user__release_vm() {
+    let n=1
+    local vm=$1
+    if [[ -z "$vm" ]]; then
+        >&2 echo "KO 55492 missing vm"
+        exit 1
+    fi
+    >&2 echo "KO 69584 Not implemented."
+    exit 1
+}
+
+user__jobs() {
+    libjobs__print_taken
+}
+
+user__backlog() {
+    >&2 echo "KO 29583 Not implemented."
+    exit 1
+    n=1
+    local cmd=$1
+    shift
+    if [[ $cmd == "close" ]]; then
+        let n=$n+1
+        local job=$1
+        echo "Request Close:"
+        libjobs__print_job $job
+        backlog__manual_checklist
+        exit 0
+    elif [[ $cmd == "improved" ]]; then
+        let n=$n+1
+        local job=$1
+        echo "Request Modified:"
+        libjobs__print_job $job
+        backlog__manual_checklist
+        exit 0
+    else
+        >&2 echo "KO 76095 only commands: close <job> or improved <job>"
+        exit 1
+    fi
+}
+
+user__set_dev() {
+    local dev=$1
+    if [[ "_${dev}" != "_" ]]; then
+        n=1
+    fi
+    new_user ${dev}
+}
+
+user__forget() {
+    new_user XX
+}
+
+user__() {
+    if [[ $nc -eq 0 ]]; then
+        >&2 help
+        #>&2 echo "KO 00000 Missing command."
+        exit 0
+    fi
+    exit 0
+}
+
+cfg_git() {
+    if is_worktree; then
+        return
+    fi
+    git config --global pull.rebase true
+    git config --global advice.pullUpdateInstead false
+    git config --global advice.statusHints false
+    if [[ -f .git/hooks/pre-push ]]; then
+        local n=$(cat .git/hooks/pre-push | grep "#devtool" | wc -l)
+        if [[ $n -eq 0 ]]; then
+            2>&1 echo "KO 40394 Found alien git hooks at .git/hooks/pre-push. Delete .git/hooks directory before continuing."
+            exit 1
+        fi
+    fi
+    if [[ ! -f .git/hooks/pre-push ]]; then
+        mkdir -p .git/hooks
+        cat << EOF > .git/hooks/pre-push
+#!/bin/bash
+#devtool
+protected_branch="main"
+current_branch=\$(git rev-parse --abbrev-ref HEAD)
+if [ "\$current_branch" = "\$protected_branch" ]; then
+    echo "KO 20918 Pushes to the main branch are disabled."
+    exit 1
+fi
+EOF
+        chmod +x .git/hooks/pre-push
+        echo "Created pre-push hook preventing pushes to branch main"
+    fi
+}
+
+libjobs__root_worktree="" #/home/manic_beret/dev/system
+libjobs__active_worktree="" #abs path to worktree
+
+init_libdevtool() {
+    . lib/libdevtool.env
+    libdevtool__init
+    if [[ " $1 " == *" forget "* ]]; then
+        set__dev_handle "XX" 0
+    fi
+    if [[ " $@ " == *" set_dev "* ]]; then
+        set__dev_handle "XX" 0
+    fi
+    on_change_dev_handle 0
+    libdevtool__enforce_ca_cert
+    if [[ "_${dev_handle}" == "_XX" ]]; then
+        return
+    fi
+    cfg_git
+}
+
+echo "$@" | grep '\-\-home ' > /dev/null
+if [[ $? -eq 0 ]]; then
+    libdevtool__home=$(echo "$@" | xargs -n1 | grep '\-\-home' -A1 | tail -n1)
+    libconfigure__home=${libdevtool__home}
+fi
+
+cmd=$1
+init_libdevtool $@
+
+flag_force=0
+save=0
+batch=0
+n=0 #args consumed by command
+nc=0 #num commands
+while [[ true ]]; do
+    opt=""
+    while [[ true ]]; do
+        opt=$1
+        shift
+        if [[ "_$opt" == "_" ]]; then
+            break
+        elif [[ "_$opt" == "_--home" ]]; then
+            #already processed above
+            shift
+            continue
+        elif [[ "$opt" == "--force" ]]; then
+            flag_force=1
+            libjobs__gitforce="-f"
+            continue
+        elif [[ "$opt" == "-f" ]]; then
+            flag_force=1
+            libjobs__gitforce="-f"
+            continue
+        fi
+        nc=$nc+1
+        if [[ "_$opt" == "_--example" ]]; then
+            continue
+        elif [[ "_$opt" == "_--dev_handle" ]]; then
+            hh=$1
+            shift
+            set__dev_handle "${hh}" ${save}
+            continue
+        elif [[ _$opt == _-* ]]; then
+            >&2 echo "KO 64594 Invalid flag $opt"
+            exit 1
+        else
+            break
+        fi
+    done
+    cmd="$opt"
+    n=0
+    user__$cmd "$@" || {
+        >&2 echo "user__ functions must set the variable n equal to the number or args that must be shifted."
+        >&2 echo "KO 19990 Invalid command $cmd, or command exited with error."
+        libdevtool__cleanup
+        exit 1
+    }
+    shift $n
+    nc=${nc}+1
+    if [[ -z "$@" ]]; then
+        break
+    fi
+done
+
+libdevtool__cleanup
+exit 0
+

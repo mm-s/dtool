@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+
+name=$1
+
+function help {
+    cat << EOF
+    $0 <name>
+    adds a new subsystem with the given name
+EOF
+}
+
+if [[ "_$name" == "_" ]]; then
+    1>&2 help
+    1>&2 echo "KO 32093 missing name"
+    exit 1
+fi
+
+mkdir -p $name/lib
+
+if [[ ! -f ${name}/lib/mk_target.env ]]; then
+    cp lib/mk_target__template ${name}/lib/mk_target.env
+    echo "The file ${name}/lib/mk_target.env has been created."
+else
+    echo "The file ${name}/lib/mk_target.env already exists."
+fi
+exit 0
+

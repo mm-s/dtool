@@ -1,0 +1,46 @@
+#!/bin/bash
+
+arg=$1
+
+. lib/shenv
+. lib/libconfigure.env
+
+clean_ss() {
+    local ss=$1
+    pushd ${ss} > /dev/null
+        if [[ "_$arg" == "_all" ]]; then
+            if [[ -f lib/mk_target__vars__echo.env ]]; then
+                rm lib/mk_target__vars__echo.env
+                echo "${ss}/lib/mk_target__vars__echo.env - delete generated file."
+            fi
+        fi
+        cat makefile | grep "clean_deep" > /dev/null
+        if [[ $? -eq 0 ]]; then
+            make clean_deep | dottify "Invoke 'make clean_deep' in SS ${ss}: "
+        else
+            make clean | dottify "Invoke 'make clean' in SS ${ss}: "
+        fi
+    popd > /dev/null
+}
+
+clean() {
+    for ss in ${subsystems}; do
+        clean_ss $ss
+    done
+}
+
+if [[ ! -f cfg_ss.env ]]; then
+    echo "Nothing to clean"
+    exit 0
+fi
+
+source_env
+
+if [[ -f ${arg}/lib/mk_target.env ]]; then
+    clean_ss $arg
+else
+    clean
+fi
+
+exit 0
+

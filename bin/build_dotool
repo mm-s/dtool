@@ -1,0 +1,17 @@
+#!/bin/bash
+
+ss=$1
+
+if [[ -z $ss ]]; then
+    >&2 echo "KO 69996 Subsystem, e.g. be/wallet"
+    exit 1
+fi
+
+rm -rf ~/.dotool/cache/debug/${ss}
+rm -rf ~/.dotool/cache/release/${ss}
+bin/clean $ss
+
+bin/build.sh --only-dotool $ss
+
+exit $?
+

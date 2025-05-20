@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+
+if [[ ! -f cfg_hosts.env ]]; then
+	1>&2 echo "KO 67582 ss_hosts.env is not linked."
+	exit 1
+fi
+
+. cfg_hosts.env
+
+m=$1
+shift
+
+var=${m}__method
+method=${!var}
+
+if [[ "_${method}" != "_ssh" ]]; then
+	if [[ "_${method}" != "_rsync" ]]; then
+		fs=$(find cfg/hosts -type f -name "${m}_*" | xargs)
+		ff=""
+		for f in $fs; do
+			method=${!var}
+			if [[ "_${method}" != "_ssh" ]]; then
+				ff=$f
+				break
+			fi
+		done
+		if [[ "_$ff" == "_" ]]; then
+			1>&2 echo "KO 67583 cfg_hosts.env doesn't define a ssh method to access $m anf no file in cfg/hosts can be found starting with $m_"
+			exit 1
+		fi
+		. $ff
+	fi
+fi
+
+
+var=${m}__user
+user=${!var}
+var=${m}__ip
+ip=${!var}
+var=${m}__sshport
+sshport=${!var}
+
+if [[ "_$1" != "_" ]]; then
+	echo "ssh -p ${sshport} ${user}@${ip}"
+	exit 0
+fi
+
+ssh -p ${sshport} ${user}@${ip}
+
+

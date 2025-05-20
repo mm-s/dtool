@@ -1,0 +1,22 @@
+#!/bin/bash
+
+device=$(lsblk -J | jq -r '.blockdevices[].children[] | select(.type == "part" and .mountpoints == ["/"]) | .name')
+
+free | awk '/Mem:/{print "mem_total=" $2 "\nmem_used=" $3 "\nmem_free=" $4}'
+main_part_device=$device
+awkarg="/${main_part_device} /{print \"${main_part_device}_used=\" \$3 \"\n${main_part_device}_free=\" \$4 \"\n\"}"
+echo "device=${main_part_device}"
+df | awk "${awkarg}"
+
+if [[ -f /var/script_tv/data_sheet__daemons ]]; then
+    proc_file=/var/script_tv/data_sheet__daemons
+    scpt_procs=$(cat $proc_file | tr '\n' ' ')
+    mpstat | awk '/all/{print "cpu_idle=" $13}'
+    for j in $scpt_procs; do
+        for i in `pidof $j`; do
+            top -p $i -n 1 -b | tail -n 1 | awk -v jj=$j -v ii=$i '{ printf( "mem_perc_%s_%s=%s", jj, ii, $10) }' 
+            echo $i
+        done
+    done
+fi
+

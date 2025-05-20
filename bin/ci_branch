@@ -1,0 +1,125 @@
+#!/bin/bash
+
+deploy__log_analysis() {
+    local f=$1
+    local fail="ok"
+    cat $f | grep "Failed to " > /dev/null
+    if [[ $? -eq 0 ]]; then
+        fail="KO"
+    fi
+    echo "${fail} ci system build_deploy"
+}
+
+run_ci() {
+    local logd="$1"
+    local conf="$2"
+    mkdir -p ${logd}
+    echo "Invoking: ${binconfigure} link_ss cfg/ss/${conf}.env"
+    ${binconfigure} link_ss cfg/ss/${conf}.env
+    if [[ $? -ne 0 ]]; then
+        >&2 "KO 60185"
+        exit 1
+    fi
+    echo "Invoking: ${binconfigure} link_hosts cfg/hosts/${conf}.env"
+    ${binconfigure} link_hosts cfg/hosts/${conf}.env
+    if [[ $? -ne 0 ]]; then
+        >&2 "KO 60185"
+        exit 1
+    fi
+    make clean
+    ${binconfigure} --debug clear_cache all --release clear_cache all
+    echo "set mode release..."
+    ${binconfigure} --save --release
+    echo "deb packages..."
+    debs=$(${binconfigure} build_debs)
+    if [[ ! -z $debs ]]; then
+        sudo bash -c "yes | apt install --yes $debs"
+        if [[ $? -ne 0 ]]; then
+            echo "KO apt install debs $debs" >> ${logd}/KOOK
+            exit 1
+        fi
+    fi
+    echo "fetch_data..."
+    2>${logd}/build.stderr.log bin/fetch_data clean | tee ${logd}/build.log
+    2>${logd}/build.stderr.log bin/fetch_data ${conf} | tee ${logd}/build.log
+    if [[ $? -ne 0 ]]; then
+        cat ${logd}/build.stderr.log
+        echo "KO ci_main update_data" >> ${logd}/KOOK
+        exit 1
+    fi
+    echo "make..."
+    2>${logd}/build.stderr.log make | tee ${logd}/build.log
+    if [[ $? -ne 0 ]]; then
+        cat ${logd}/build.stderr.log
+        echo "KO ci_main build" >> ${logd}/KOOK
+        exit 1
+    fi
+    cat ${logd}/build.stderr.log
+    let le=$(cat ${logd}/build.stderr.log | grep "KO " | wc -l)
+    if [[ $le -gt 0 ]]; then
+        echo "KO Compilation errors. build.stderr.log" >> ${logd}/KOOK
+        exit 1
+    fi
+    echo "make deploy..."
+    2>${logd}/deploy.stderr.log make deploy_notest | tee ${logd}/build_deploy.log
+    if [[ $? -ne 0 ]]; then
+        echo "KO ci_main deploy $conf" >> ${logd}/KOOK
+        exit 1
+    fi
+    bin/test_deployment _targets 1 >> ${logd}/KOOK
+    cat ${logd}/KOOK | grep "^info " | tee ${logd}/info
+    echo "moving _targets to ${logd}/"
+    mv _targets ${logd}/
+    echo "finished run_ci"
+}
+
+. lib/libconfigure.env
+
+ts="$(date +%Y%m%d%H%M%S)"
+tsh="$(date)"
+git_version=$(git describe --always --tags --long --abbrev=10 --dirty --broken)
+
+branch=$1
+conf=$2
+ci_home=$3
+ci_output_dir=$4
+
+export DEBIAN_FRONTEND=noninteractive
+
+logdir=${ci_output_dir}/${ts}
+mkdir -p ${logdir}
+
+cat << EOF > ${logdir}/info.env
+ts=${ts}
+tsh="${tsh}"
+git_version=${git_version}
+branch=${branch}
+conf=${conf}
+EOF
+
+binconfigure="bin/configure --home ${ci_home}"
+
+2>&1 run_ci ${logdir} ${conf} | tee ${logdir}/exec.log
+
+echo "logs at ${logdir}"
+
+pushd display > /dev/null
+    bin/cilog2kook ${logdir} > ${logdir}/ci.kook
+    make display > /dev/null  #build program display
+    if [[ $? -ne 0 ]]; then
+        >&2 echo "KO 87694 display build error"
+        exit 1
+    fi
+#        --path "product_owner" --kook panels/product_owner.kook \
+#         --path "cto" --kook panels/cto.kook \
+    mkdir -p ${logdir}/display
+    ./display \
+        --path "ci" --cilog ${logdir} > ${logdir}/display/index.html
+    if [[ $? -ne 0 ]]; then
+        >&2 echo "KO 87693 display run error"
+        exit 1
+    fi
+popd > /dev/null
+
+exit 0
+

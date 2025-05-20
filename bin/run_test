@@ -1,0 +1,214 @@
+#!/usr/bin/env bash
+
+function check_n_xxx__3 {
+    local f=$1
+    local exp=$2
+    let x=$(cat $f | wc -l)
+    if [[ $x -ne $exp ]]; then
+        >&2 cat $f
+        >&2 echo "KO 78786 n=$n expected $exp lines, got $x"
+        exit 1
+    fi
+}
+
+
+###################################################
+function check_n_1__3 {
+    check_n_xxx__3 $1 1
+}
+function check_n_2__3 {
+    check_n_xxx__3 $1 0
+}
+function check_n_3__3 {
+    check_n_xxx__3 $1 0
+}
+function check_n_4__3 {
+    check_n_xxx__3 $1 0
+}
+
+function check_n_5__3 {
+    check_n_xxx__3 $1 1
+}
+
+function check_n_6__3 {
+    check_n_xxx__3 $1 0
+}
+function check_n_7__3 {
+    check_n_xxx__3 $1 4
+}
+function check_n_8__3 {
+    check_n_xxx__3 $1 1
+}
+###################################################
+
+
+###################################################
+function check_n_1__4 {
+    check_n_xxx__3 $1 1
+}
+function check_n_2__4 {
+    check_n_xxx__3 $1 0
+}
+function check_n_3__4 {
+    check_n_xxx__3 $1 0
+}
+function check_n_4__4 {
+    check_n_xxx__3 $1 0
+}
+
+function check_n_5__4 {
+    check_n_xxx__3 $1 1
+}
+
+function check_n_6__4 {
+    check_n_xxx__3 $1 0
+}
+function check_n_7__4 {
+    check_n_xxx__3 $1 4
+}
+function check_n_8__4 {
+    check_n_xxx__3 $1 1
+}
+###################################################
+
+
+
+function gen_vars_echo__body___whiteboard {
+    local file=$1
+    local suffix=$2
+    vars=$(cat $file | grep "^function *mk_target__set_vars__${suffix} {" -A10000000 | grep '^}$' -m1 -B10000000 | grep "^    " | grep -v "^ *local" | grep "^ *[a-zA-Z0-9_]*=.*" | tr '=' ' ' | awk '{ print $1 }' | xargs)
+    for v in $vars; do
+        echo "${v}=\"\${${v}}\""
+    done
+}
+
+function gen_vars_echo__subcalls___whiteboard {
+    local file=$1
+    local suffix=$2
+>&2 echo "-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-= subcalls \\/"
+
+#    vars=$(cat $file | grep "^function *mk_target__set_vars__${suffix} {" -A10000000 | grep '^}$' -m1 -B10000000 | grep "^    " | grep -v "^ *local"
+
+>&2 echo "          1 -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-= subcalls \\/"
+    cat $file | grep "^function *mk_target__set_vars__${suffix} {" -A10000000 | grep '^}$' -m1 -B10000000 | grep "^    " | sed "s~^\(.*\)#.*~\1~" | tee /tmp/xxodd >&2 
+>&2 echo "          1 -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-= subcalls \\/"
+>&2 echo
+
+
+>&2 echo "          2 -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-= subcalls \\/"
+    cat /tmp/xxodd | grep -v "^ *local" | tee /tmp/xxeven >&2 
+>&2 echo "          2 -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-= subcalls \\/"
+>&2 echo
+
+
+
+>&2 echo "          3 -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-= subcalls \\/"
+     cat /tmp/xxeven | grep "__set_vars" | tee /tmp/xxodd >&2 
+>&2 echo "          3 -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-= subcalls \\/"
+>&2 echo
+check_n_${n}__3 /tmp/xxodd
+
+
+>&2 echo "          4 -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-= subcalls \\/"
+    cat /tmp/xxodd | sed "s~\(.*\)__set_vars\(.*\)~\1__vars__echo\2~" | awk '{ print $1 }' | sed "s~\(.*\)~    \1~" | tee /tmp/xxeven >&2 
+>&2 echo "          4 -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-= subcalls \\/"
+>&2 echo
+check_n_${n}__4 /tmp/xxodd
+
+
+    rm /tmp/xxeven
+    rm /tmp/xxodd
+
+    cat $file |                                                                     \
+    grep "^function *mk_target__set_vars__${suffix} {" -A10000000 |                 \
+    grep '^}$' -m1 -B10000000 |                                                     \
+    grep "^    " |                                                                  \
+    sed "s~^\(.*\)#.*~\1~"                                                          \
+    |                                                                               \
+    grep -v "^ *local"                                                              \
+    |                                                                               \
+    grep "__set_vars"                                                               \
+    |                                                                               \
+    sed "s~\(.*\)__set_vars\(.*\)~\1__vars__echo\2~" |                              \
+    awk '{ print $1 }' |                                                            \
+    sed "s~\(.*\)~    \1~"
+
+>&2 echo "-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-= / subcalls /\\"
+}
+
+function gen_vars_echo___whiteboard {
+    local file=$1
+    local doall=$2
+    let n=0
+
+    suffixes=$(cat $file | grep '^function *mk_target__set_vars__' | sed 's~function *mk_target__set_vars__\(.*\) *{.*~\1~')
+    for s in $suffixes; do
+        let n=$n+1
+        if [[ "_${doall}" != "_doall" ]]; then
+            if [[ $n -ne $nn ]]; then
+                continue
+            fi
+        fi
+>&2 echo
+>&2 echo "----INPUT------------------------------------------------------------------------------------------------------------------------------------"
+ cat $file | grep "^function *mk_target__set_vars__${s} {" -A10000000 | grep '^}$' -m1 -B10000000 >&2
+>&2 echo "--/-INPUT------------------------------------------------------------------------------------------------------------------------------------"
+>&2 echo
+>&2 echo "==================OUTPUT========================"
+        echo "function mk_target__vars__echo__$s {"
+        echo "    mk_target__vars__echo__header"
+        echo "    cat << EOF"
+        gen_vars_echo__body___whiteboard $file $s
+        echo
+        echo "EOF"
+        gen_vars_echo__subcalls___whiteboard $file $s
+        echo "}"
+        echo
+>&2 echo "================/=OUTPUT========================"
+
+>&2 echo "----INPUT------------------------------------------------------------------------------------------------------------------------------------"
+ cat $file | grep "^function *mk_target__set_vars__${s} {" -A10000000 | grep '^}$' -m1 -B10000000  >&2
+>&2 echo "--/-INPUT------------------------------------------------------------------------------------------------------------------------------------"
+
+    done
+}
+
+let nn=0
+
+function test__gen_vars_echo {
+
+    while true; do
+        gen_vars_echo___whiteboard test/mk_target__vars.env
+        let nn=$nn+1
+        if [[ $nn -eq 9 ]]; then
+            break
+        fi
+    done
+
+    >/tmp/output__whiteboard 2>/dev/null \
+    gen_vars_echo___whiteboard         test/mk_target__vars.env   doall
+
+    . lib/libconfigure.env
+    >/tmp/output__production \
+    mktarget__gen_vars_echo            test/mk_target__vars.env 
+
+    #production function give same output
+    diff /tmp/output__whiteboard /tmp/output__production
+    if [[ $? -ne 0 ]]; then
+        >&2 echo "KO 66922 Production version differs from test version"
+        exit 1
+    fi
+
+    rm /tmp/output__whiteboard
+    rm /tmp/output__production
+
+    echo "OK Production version matches test version"
+}
+
+function test_main {
+	test__gen_vars_echo
+
+}
+
+test_main
+

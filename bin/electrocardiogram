@@ -1,0 +1,211 @@
+#!/bin/bash
+
+devs="AS SK DS IT MM NB PJ FA MK"
+
+function dev {
+	if [[ "_$1" == "_Marcos_Mayorga_<marcos@script.tv>" ]]; then
+		echo "MM"
+		return
+	elif [[ "_$1" == "_Marcos_<marcos@script.tv>" ]]; then
+		echo "MM"
+		return
+	elif [[ "_$1" == "_Manic_Beret_<manicberet@gmail.com>" ]]; then
+		echo "MM"
+		return
+	elif [[ "_$1" == "_Manic_Beret_<marcos@script.tv>" ]]; then
+		echo "MM"
+		return
+	elif [[ "_$1" == "_Furqan_Aziz_<furqan@scipt.tv>" ]]; then
+		echo "FA"
+		return
+	elif [[ "_$1" == "_Furqan_Aziz_<furqan@script.tv>" ]]; then
+		echo "FA"
+		return
+	elif [[ "_$1" == "_Furqan_Aziz_<fa@script.tv>" ]]; then
+		echo "FA"
+		return
+        elif [[ "_$1" == "_TechSolutionAAA_<kogutstt2@gmail.com>" ]]; then
+		echo "NB"
+		return
+        elif [[ "_$1" == "_Shiv_Kumar_<shiv.kumar@oodles.io>" ]]; then
+		echo "SK"
+		return
+        elif [[ "_$1" == "_Shiv_Kumar_<shiv@shiv.kumar>" ]]; then
+		echo "SK"
+		return
+        elif [[ "_$1" == "_Mayank_Kumar_<mayank.kumar@oodles.io>" ]]; then
+		echo "MK"
+		return
+        elif [[ "_$1" == "_dheeraj2428_<dheeraj.sharma1@oodles.io>" ]]; then
+		echo "DS"
+		return
+        elif [[ "_$1" == "_Ivan_Tivonenko_<ivan@script.tv>" ]]; then
+		echo "IT"
+		return
+        elif [[ "_$1" == "_paulsj-80c_<pauls@debian>" ]]; then
+		echo "PJ"
+		return
+        elif [[ "_$1" == "_paulsj-80c_<pauls@script.tv>" ]]; then
+		echo "PJ"
+		return
+        elif [[ "_$1" == "_pauls_<pauls@debian>" ]]; then
+		echo "PJ"
+		return
+        elif [[ "_$1" == "_Arman_Stepanyan_<37415995+armansw@users.noreply.github.com>" ]]; then
+		echo "AS"
+		return
+        elif [[ "_$1" == "_armansw_<stepanyan.arman982@gmail.com>" ]]; then
+		echo "AS"
+		return
+        elif [[ "_$1" == "_armansw_<stepanyan.arman982@gmail.com>" ]]; then
+		echo "AS"
+		return
+	fi
+	>&2 echo "KO 22986 $1"
+	exit 1
+}
+
+function mk_log {
+	echo "" > /tmp/log
+	git log --oneline | while read -r line; do
+		hash=$(echo "$line" | awk '{print $1}')
+
+		#echo -n "$hash "
+		author=$(git log -1 $hash | grep "^Author: " | awk '{$1=""; print $0}')
+
+		vdate=$(git log --date=local -1 $hash | grep "^Date: " | awk '{$1=""; print $0}')
+
+		author="${author#"${author%%[![:space:]]*}"}"
+		vdate="${vdate#"${vdate%%[![:space:]]*}"}"
+		dt=$(date --date="${vdate}" +"%s")
+
+		author=$(echo "$author" | tr ' ' '_')
+		author=$(dev $author)
+
+		echo "$hash $author $dt" | tee -a /tmp/log
+
+	done
+}
+
+if [[ ! -f /tmp/log ]]; then
+	echo "parsing git"
+	mk_log
+	echo "produced /tmp/log"
+fi
+
+cat /tmp/log | grep -v '^$' | awk '{ print $3" "$2 }' | sort > /tmp/log2
+echo "produced /tmp/log"
+
+firstts=$(cat /tmp/log2 | head -n1 | awk '{ print $1 }')
+lastts=$(cat /tmp/log2 | tail -n1 | awk '{ print $1 }')
+
+block=28800 # 3600  #86400=1day
+
+function day {
+	d0=$(echo "$firstts / $block" | bc)
+	let dcur=0
+	echo "$dcur"
+	while read -r line; do
+		ts=$(echo "$line" | awk '{ print $1 }')
+		let d="$(echo "$ts / $block - $d0" | bc)"
+		while [[ $d -gt $dcur ]]; do
+			let dcur=$(echo "$dcur+1" | bc)
+			echo "$dcur" #gives real activity + 1
+		done
+		echo "$d"
+	done
+	dmax=$(echo "$lastts / $block - $d0" | bc)
+	while [[ $dmax -gt $dcur ]]; do
+		dcur=$(echo "$dcur+1" | bc)
+		echo "$dcur" #gives real activity + 1
+	done
+}
+
+#dev="$1"
+
+#if [[ -z $dev ]]; then
+#    cat /tmp/log2
+#    exit 0
+#fi
+
+function mkdev {
+	dev=$1
+	cat /tmp/log2 | grep " $dev" | day | uniq -c | awk '{ $1 = $1 - 1; print $2" "$1 }'
+}
+
+function write_electrocardiogram_gnu {
+	cat << EOF > electrocardiogram.gnu
+set terminal pngcairo  transparent enhanced font "arial,10" fontscale 1.0 size 600, 1600 background rgb 'white'
+set output 'electrocardiogram.png'
+#set key autotitle columnhead
+set style data histograms
+#set style histogram rowstacked
+#set boxwidth 2 relative
+set style fill solid 1.0 border 1
+set xrange [0:]              # Start x-axis at 0 and auto-scale upper bound
+set yrange [0:7]
+set datafile separator " "  # Correct separator (tab)
+set multiplot layout 10,1 rowsfirst  #title "system:/ developer activity."
+
+# Plot an empty header plot with the same xrange
+set style data lines
+set xrange [0:600]  # Same xrange as the data plots
+#set yrange [0:14]  # Same xrange as the data plots
+plot NaN notitle
+
+#set yrange [0:7]
+
+# Set title for the entire multiplot layout
+set label 1 "system:/ developer activity." at screen 0.5,0.98 center font "arial,14"
+
+# Set subtitle for the entire multiplot layout
+set label 2 "Y axis: Activity intensity (git commit)" at screen 0.5,0.95 center font "arial,12"
+set label 3 "X axis: Time since start. 1 unit = 8 hours." at screen 0.5,0.94 center font "arial,12"
+
+# Plot data (skip header row and plot columns)
+plot '/tmp/dev_activity' using 1:2 title "AS" with boxes
+plot '/tmp/dev_activity' using 1:3 title "SK" with boxes
+plot '/tmp/dev_activity' using 1:4 title "DS" with boxes
+plot '/tmp/dev_activity' using 1:5 title "IT" with boxes
+plot '/tmp/dev_activity' using 1:6 title "MM" with boxes
+plot '/tmp/dev_activity' using 1:7 title "NB" with boxes
+plot '/tmp/dev_activity' using 1:8 title "PJ" with boxes
+plot '/tmp/dev_activity' using 1:9 title "FA" with boxes
+plot '/tmp/dev_activity' using 1:10 title "MK" with boxes
+
+EOF
+}
+
+
+
+rm -f /tmp/dev_activity
+touch /tmp/dev_activity
+
+echo "producing dataset for AS"
+echo "day AS" > /tmp/dev_activity
+mkdev AS >> /tmp/dev_activity
+
+for dev in $(echo "$devs" | xargs -n1 | grep -v AS | xargs); do
+        echo "producing dataset for $dev"
+	echo "$dev" > /tmp/log_day_$dev
+	mkdev $dev | awk '{ print $2 }' >> /tmp/log_day_$dev
+	paste /tmp/dev_activity /tmp/log_day_$dev > /tmp/xx88
+	mv /tmp/xx88 /tmp/dev_activity
+done
+
+#cat /tmp/dev_activity | column -t | sed 's/\t/X/g' > /tmp/dev_activity_processed
+cat /tmp/dev_activity | column -t | xargs -n10 > /tmp/dev_activity_processed
+#cat /tmp/dev_activity_processed
+mv /tmp/dev_activity_processed /tmp/dev_activity
+
+echo "dataset at /tmp/dev_activity"
+command -v gnuplot > /dev/null
+if [[ $? -eq 0 ]]; then
+	write_electrocardiogram_gnu
+	gnuplot electrocardiogram.gnu
+	echo "generated electrocardiogram.png"
+else
+	>&2 echo "WA 33029 plot not produced because gnuplot is not installed."
+fi
+
+exit 0

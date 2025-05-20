@@ -1,0 +1,395 @@
+#!/bin/bash
+
+dev=$1
+log="/tmp/onboarding_log"
+touch $log
+
+waitdone() {
+while [[ true ]]; do
+    echo -n "done? [yes]: "
+    read x
+    if [[ "_$x" == "_yes" ]]; then
+        break
+    fi
+done
+}
+
+coach__devtool__os() {
+    echo "uname:"
+    echo -n "009 uname " >> $log
+    uname -a | tee -a $log
+    cat << EOF
+OS - Debian GNU/Linux
+=====================
+Debian GNU/Linux 12 is our official Linux distribution.
+
+Unfortunately our tools won't work on non-free operating system MacOS.
+Apple supplies an immutable old version of bash that is incompatible with our code.
+
+EOF
+    echo "uname:"
+    uname -a
+    echo -n "Do you have a debian or derived linux workstation? [yes|no]: "
+    read -r uses_linux 
+
+    echo "010 use_debian_linux $uses_linux" >> $log
+}
+
+coach__devtool__deps() {
+    cat << EOF
+needed packages
+===============
+Please execute the following programs and install the indicated packages 
+
+bin/devtool deps                        #install devtool dependency libraries
+bin/configure build_deps                #install dotool dependency libraries
+
+EOF
+waitdone
+}
+
+coach__devtool__newsshkey() {
+    cat << EOF
+SSH Key
+=======
+run ssh-keygen to produce the file ~/.ssh/id_rsa.pub
+
+EOF
+waitdone
+}
+
+coach__devtool__sshkey() {
+    if [[ ! -f ~/.ssh/id_rsa.pub ]]; then
+        coach__devtool__newsshkey
+    fi
+    echo -n "020 sshkey " >> $log
+    cat ~/.ssh/id_rsa.pub >> $log
+    
+    cat << EOF
+SSH Key
+======
+Your ssh public key at ~/.ssh/id_rsa.pub is 
+$(cat ~/.ssh/id_rsa.pub)
+
+EOF
+}
+
+coach__devtool__set_dev() {
+    local dev=$1
+    cat << EOF
+set_dev
+=======
+Let the tool know who you are. Run:
+
+bin/devtool set_dev $dev
+
+EOF
+waitdone
+}
+
+coach__devtool__config() {
+    cat << EOF
+devtool config
+==============
+
+devtool static configuration file is at:
+
+cat ~/.devtool/config
+
+Have a look into it...
+Make sure dev_handle is correct, the rest of params should be good.
+
+your default secrets dir is then _dev_secrets_$dev/
+
+Your secrets, all info in this dir, s meant to never be revealed to anyone.
+
+EOF
+waitdone
+}
+
+coach__devtool__github() {
+    cat << EOF
+Github
+======
+Obtain a github access token for your ssh key (~/.ssh/id_rsa.pub)
+edit file _dev_secrets_$dev/devtool.env
+find and configure the variable github_access_token.
+
+EOF
+waitdone
+}
+
+coach__devtool__jobs() {
+    cat << EOF
+Daily routine
+=============
+
+0.- have a coffee (or equivalent) nearby
+
+1.- fetch jobs
+
+The jobs database is populated from this url (using the github api key)
+* https://github.com/scriptnetwork/system/issues
+
+This list (product backlog) can also be accessed via is shortlists that can be found here: 
+* https://github.com/scriptnetwork/cto?tab=readme-ov-file#product
+
+Run:
+
+bin/devtool fetch
+
+You can then check your local database with:
+
+bin/devtool all
+
+EOF
+waitdone
+
+    cat << EOF
+
+2.- Active job
+
+You can be either have an active job or not. 
+When you don't have an active job you are in idle, or rest or main mode (all are names for the same state)
+In this main mode devtool assumes you are in branch ${dev}/main.
+
+${dev}/main is a fork of branch main, the only branch that is pulled from github.
+
+to synchronize do:
+
+bin/devtool pull
+
+this command will checkout branch main, pull, then checkout branch ${dev}/main, then it will rebase it from main.
+
+This branch is how we used to work before implementing feature branches associated with jobs.
+
+Check how bin/devtool tells your state
+
+bin/devtool
+
+and check your current branch
+
+git branch
+
+it should be ${dev}/main
+
+If you change your branch and invoke devtool it will switch the branch back to ${dev}/main before continuing.
+
+
+EOF
+waitdone
+
+    cat << EOF
+
+3.- take/release jobs
+
+You will use these funtions to add and remove jobs in your shortlist
+
+Pick any existing job number to use as an example, e.g. 999, and do:
+
+bin/devtool take 999 
+
+this will create the feature branch ${dev}/job_999
+
+check your shortlist contains the just taken job:
+
+bin/devtool jobs 
+
+
+bin/devtool release 999
+
+this will remove job 999 from your shortlist, deleten the remote branch if exists and the local branch (unless you'll want to keep it, you'll be asked}
+ 
+
+EOF
+waitdone
+
+    cat << EOF
+
+Let's take it again:
+
+bin/devtool take 999 
+
+4.- Active job
+
+You would set the active job among those in your shortlist doing:
+
+bin/devtool chjob 999
+
+check the status
+
+bin/devtool
+
+
+EOF
+waitdone
+
+    cat << EOF
+
+5.- Every day, before signing-in, open your active job and add an update about it.
+* advances, troubles, progress, design decisions, that you did yesterday (if you didn't do before sining out)
+* design, approach, etc if you just started the job.
+
+do:
+
+bin/devtool sign_in
+
+this will remind you of doing your ticket management before submitting a message to channel #hot__bot
+
+When you finish your day run:
+
+bin/devtool sign_out
+
+you can sign in/out as many times as you want to indicate the team you're online/offline. At least one.
+
+EOF
+waitdone
+
+    cat << EOF
+
+Now, take job 227. This is the job that covers this very script.
+
+sign_in again and do some changes in the codebase.
+
+make sure you're on branch {dev}/job_227
+
+do:
+
+cp cfg/ss/MM.env cfg/ss/${dev}.env
+git add cfg/ss/${dev}.env
+git commit -m "${dev} custom subsystem configuration. "
+
+
+EOF
+waitdone
+
+    cat << EOF
+
+self review your final changes:
+
+bin/devtool review
+
+EOF
+waitdone
+
+    cat << EOF
+
+You are happy with it, now request a review with the intention to merge your changes into main. 
+This will be done by the dev running the merger role.
+
+bin/devtool rr
+
+Since you haven't got a VM yet answer no to the questions related to branch deployment.
+
+And submit your RR, we'll take it from here in channel #hot__bot
+
+Thanks, see you there
+MM
+
+
+EOF
+}
+
+coach__dev_handle() {
+    if [[ "_${dev}" == "_" ]]; then
+        dev="XX"
+        dev_domain="xx"
+        return
+    fi
+    dev=${dev^^}
+    dev_domain=${dev,,}
+    if [[ "_${#dev}" != "_2" ]]; then
+        >&2 echo "KO 00209 Invalid dev_handle ${dev}."
+        exit 1
+    fi
+
+    cat $log | grep "^001 " > /dev/null
+    if [[ $? -eq 0 ]]; then
+        if [[ "_$dev" != "_XX" ]]; then
+            devf=${cat $log | grep "^001 " | awk '{ print $3 }'}
+            if [[ "_$devf" != "_$dev" ]]; then
+                >&2 echo "KO 00022 Invalid dev_handle. It conflicts with the one found at $log"
+                exit 1
+            fi
+            def=$devf
+            dev_domain=${dev,,}
+        fi
+    fi
+
+    echo "XX AA AO MM FA SK MK IT AS KM DS PJ NB RT SG" | xargs -n1 | grep "${dev}" > /dev/null
+    if [[ $? -eq 0 ]]; then
+        >&2 echo "KO 00209 Invalid dev_handle ${dev}. This is a reserved one. Pick another."
+        redirect_msg
+        exit 1
+    fi
+}
+
+coach__onboard() {
+    coach__dev_handle $dev
+    echo "000 dev_handle $dev" > $log
+    cat << EOF
+CTO Office
+HoT Team - Onboarding
+
+Warm welcome ${dev}!,
+This program will guide you through an instruction process where you'll learn the team workflow, also knows as the developer protocol.
+
+ONBOARDING/COACHING/TRAINING - Developer
+Topics:
+
+    * workstation dependencies
+    * Hot handle: ${dev}
+    * devtool - manage your daily work
+    * talent workflow - git
+    * codebase
+    * dotool - manage your codebase
+    * Infrastructure VM
+    * Subsystems overview
+
+EOF
+    coach__devtool__os
+    coach__devtool__deps
+    coach__devtool__sshkey
+    coach__devtool__set_dev $dev
+    coach__devtool__config
+    coach__devtool__github
+    coach__devtool__jobs
+}
+
+redirect_msg() {
+    >&2 echo "check https://github.com/scriptnetwork/cto/blob/main/doc/hot__onboarding.md"
+}
+
+if [[ -z $1 ]]; then
+    >&2 echo "KO 00000 invalid dev_handle"
+    redirect_msg
+    exit 1
+fi
+ 
+    cat << EOF
+Info:
+You can execute this program as many times as you wish, it saves state in file $log.
+To restart the process from scratch delete the file $log
+
+EOF
+
+coach__onboard
+
+
+: << EOF
+        <div className="step">
+          <div className="step-number">1</div>
+          <div className="step-content">
+            <div className="step-header">
+              <Terminal size={16} />
+              <h3>source handy shell aliases</h3>
+            </div>
+            <div className="code-block-with-copy">
+                <CopyableCodeBlock code=". lib/devenv" />
+            </div>
+                <p>This allows you to use the alias <code>dt</code> instead of the more verbose <code>bin/devtool</code>.</p>
+          </div>
+        </div>
+EOF
+exit 0
+

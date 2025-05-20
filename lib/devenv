@@ -1,0 +1,3 @@
+alias dt="bin/devtool"
+alias gst="git status -uno"
+

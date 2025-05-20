@@ -1,0 +1,73 @@
+#!/bin/bash
+
+domain="stage.cto.script.tv"
+
+#Interesting calls captured in prod logs:
+# /api/v1/getallmediumfeedslimit=4
+# /api/v1/save/duration
+# /api/v1socket/connect
+
+#target="https://backend.stage.cto.script.tv/api/v1/getallmediumfeedslimit=4"
+#Execution branch: 
+# "Not Authorized" : attacked at a rate of 1100 times per minute for 25 minutes. Cannor reproduce. TV shows at stage.cto.script.tv
+# "Authorized": Not run. (waiting for curl calls)
+
+#target="https://backend.stage.cto.script.tv/api/v1/save/duration"
+#Execution branch: 
+# "Not Authorized" : attacked at a rate of 1100 times per minute for 20  minutes. Cannor reproduce. TV shows at stage.cto.script.tv
+# "Authorized": Not run. (waiting for curl calls)
+
+target="https://backend.${domain}.script.tv/api/v1socket/connect"     #the call is malformed
+#Execution branch:
+# "Not Authorized" : attacking at a rate of 1100 times per minute for 1h 50 min.
+# "Authorized": Not run. (waiting for curl calls)
+
+
+
+function register_account {
+    chain_id=97
+    wallet_id=
+
+    url="https://backend.${domain}/api/v1/web3RegisterAndLogin"
+    h1="-H '"'sec-ch-ua: "Not/A)Brand";v="8", "Chromium";v="126", "Google Chrome";v="126"'"'"
+    h2="-H '""countryName: dummyData""'"
+    h2="-H '""longitude: dummyData""'"
+    h2="-H '""latitude: dummyData""'"
+    h2="-H '""sec-ch-ua-mobile: ?0""'"
+    h2="-H '""ipAddress: dummyData""'"
+    h2="-H '""screenName: signUpModal""'"
+    h2="-H '""Content-Type: application/json""'"
+    h2="-H '"'Accept: application/json, text/plain, */*'"'"
+    h2="-H '"'User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'"'"
+    h2="-H '""Referer: https://${domain}/""'"
+    h2="-H '"'dateTime: 2024-08-05 20:54:43.992'"'"
+    h2="-H '""chain-id: ${chain_id}""'"
+
+
+ sec-ch-ua-platform: \"Linux\" --data-raw '{"walletAddress":"","auth_challenge":""}'
+
+
+
+
+
+    h2="-H '${account}'"
+
+
+    hdrs="$h1 $h2"
+
+curl "https://backend.${domain}/api/v1/register' $hdrs
+  -H 'chain-id: 97' \
+  -H 'latitude: dummyData' \
+  -H 'sec-ch-ua-platform: "Linux"' \
+  --data-raw '{"email":"","userName":"abc","accountLocked":false,"confirmPassword":"","firstName":"abc","lastName":"","middleName":"","password":"Admin@1234","othersReferralCode":"","recaptchaToken":"03AFcWeA5M6bLXa0Q03M1gQUFfi2Ds3uVr7Wdj_pTS28CV0tEN02T5_Fsjd3wzeDJ62lV3haL5aDhfwH8x9BUp1Dc0VBQ2LJfAiM8SfuwESE4D0LsOfrz1AoRxcAY-Vb7UcwApiIBKvwbKXJemKejs3CvsIAmZtw7Jr17oYIcuMXhOr3k_pfhj2PiJKjvWBeogGJyqj0MI9NhkYBBdXNeTG-TdLYNDt1CDSIE7GQzfAta_a74mvcuna2dPmY6itkcrnLSHWaW5-ZnUrNvD1J7KHM7vpJYstzci4xsYiJulZr4YduFgJzLhN2-481rsfEENgrmQtLfV4aM_B-EzTeB5SqRI3dN7CpaDUDaxNJGRLeCyFk9LP3CCaSQHsa1YKr55EQ2dVhaQWBPdCDp7V_Q0Gz1L-mzdflvZ2rcXVhZzNkJJq-8ZssUnmrfMSSvQBPT6b7QTvDEf80N0iEkZrV5nE-YF99sQyzcPuwsnX4qV6krofjPn2iwZvwJeJ9Q3IqjZBshxseErfyZyCkfr2-VoBcFMemUY3RWlXm7BLwM7YKEX3MY8Y5rvNTMJ5MVYOWGMY7_yM7zNI0qWdrkJAemD8hTPXf_owU6kNaoPh4FHbwzPMtsh8fToYceCXbaM4IHrf6_9LKLUqcHNNFrA0C56ZkfE4rqubmEoyzt4XvBQu5PsjK9O_T2N6hOKEEX728tm4L1CbGFgfSA38SpXrVLOF4bIJuPpLSllHKKIoYE5ZxOsR7dNiEr4u0QIjtty_7JGkHIoAMoZ61BS7pv2S-YatYZqeEuRfqq5kXqYkrrI6PgqKxLr49s1RD8VYBjyYXFbpFJ92tf3yYOZ_-Wkho-oL9UuVYuzQzgBvkLnQz4t7UQlwyGFqMiARggZSwC14XklytTqDRQr54XyEVRypBfK6NzS3WGE99yQpY5er9QJPcQd3EOmHF2CaO5bAmh5ahdHlSXC-EWrOSbLcc6iOtlWOoxumqAerKn4Ja4WeR-AB5ycMWxJ7IxTLfydAGkp24OlLf4HiP4bUo8vMGOMVhrQxCO5zFbN-W0Lw3Kgcgj5rtR2E02ncWFPDSYi4kUDQ22goBQ9HRdcH9gJld5zt4srb5G2kx4GmO8r6s9fMAx0hxN-DCVANncqtOxswFgjVzxrECsSrkmOOOikHsYCu59aojoS4UpMbRYzrgNe6nlXkdqjZp_Q8FjFdxv-IFdbG5XGJL5HmC1dLqXwt5N9DRt0aG2M-3uWFGuPZoRxPXF9HqJ_pAn7yPQ3F_cSzqQPru1z2ks42Fws-lwERMTFoCTmnlSC4WMkzUdoA_8TNQmFl-yLtJJhnOUgXlHWlUlBTj_RwU4TU6NwKLwglH0l3YQhCh-6I8jlT9jWjG-rjHqZBD9NJdFTcprXZpfLyy7HvVA858xd13KWqWpgH2mmdzzUKnEIOzBKLOD_5BwuXMgY90gsdcMiZOfnRSD5JW6JfnOeAArgPmp49iiJpFYfNtwbFaV4YCsL-tR_ef5-FCntvYGEaJgzNTk2hr9-1k_Q0_w-CcFiqe5KoWbsm7ArPxCI_cxI-HmM2XKoGCujGjrPwOb0ZHiiYifBMvXIBzI-FKi1l6bhIhW091H2ifAl50oSR8bLs12yDqpuRMWwJiuCDk4ju6wGP1A-e9ZD4KYFZu7GlMitewtczNspcqkRVDeO4FeyeBnJdfXQyv568HBvNcK4Ga1jwC3qeg1fW8K6gL_Er62Srl2A3HWxPELgGjZIu6WLpcl-N_JyC1xN7hFMg6trRWv7JQmKKPwxP7coIgfLhTLA2839vtxKseyM0zmXoxHyh94WTG0mG9Il2KxcYRggyTAb_adhySY6qcGIDSuAULEcDXmY39uuCv5LRv2lO8AxHYg38Blv74fZalyqW5cVA7-y8xaGp60"}"
+
+}
+
+
+
+
+while [[ true ]]; do
+	res=$(curl -s -k $target)
+	echo $res
+done
+

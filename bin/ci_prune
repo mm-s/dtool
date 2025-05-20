@@ -1,0 +1,27 @@
+#!/bin/bash
+
+pub=/var/www/html/make
+oldest=$(date --date="1 days ago" +%Y%m%d000000)
+
+delold() {
+    local dir=$1
+    echo "$dir"
+    for fd in $(find $dir -mindepth 2 -maxdepth 2 -type d -name "_targets"); do
+        d=$(basename $(dirname $fd))
+        echo -n "$d <? $oldest "
+        if [[ $d -lt $oldest ]]; then
+            echo "del $fd"
+            rm -rf $fd
+        else
+            echo "keep"
+        fi
+    done
+}
+
+delold /var/www/html/make/stage
+#delold /var/www/html/make/prod
+#delold prod/output_log/
+
+
+exit 0
+

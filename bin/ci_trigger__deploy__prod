@@ -1,0 +1,14 @@
+#!/bin/bash
+branch=$1
+echo "Running ci_main for production in background"
+cd
+lock_file=".ci_lock"
+if [[ -f ${lock_file} ]]; then
+    local when=$(cat .ci_lock)
+    >&2 echo "KO 79660 CI is busy since ${when}. lockfile ${lock_file}"
+    exit 1
+fi
+rm nohup.out;
+time nohup bin/ci_main $branch &
+exit 0
+

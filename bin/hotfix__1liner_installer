@@ -1,0 +1,18 @@
+#!/bin/bash
+
+msg() {
+network=$1
+echo "wget -q -O script_tv-node-${network}_debian_11_x86_64__install.sh https://download.script.tv/files/script_tv-node-${network}_debian_11_x86_64__install.sh"
+echo "patch file: script_tv-node-${network}_debian_11_x86_64__install.sh"
+echo "scp script_tv-node-${network}_debian_11_x86_64__install.sh root@vmlon05.cto.script.tv:/var/www/script_tv/fe/download/files/"
+}
+
+echo "TESTNET:"
+msg testnet
+
+echo
+echo "MAINNET:"
+msg mainnet
+
+exit 0
+

@@ -1,0 +1,41 @@
+#!/bin/bash
+
+. lib/shenv
+. lib/libconfigure.env
+
+fetch_data__ss() {
+    local conf=$1
+    local ss=$2
+    pushd ${ss} > /dev/null
+        if [[ -x bin/fetch_data ]]; then
+            echo "Fetching data for SS ${ss} conf ${conf}..."
+            bin/fetch_data $conf
+        else
+            echo "Nothing to fetch for SS ${ss} conf ${conf}."
+        fi
+    popd > /dev/null
+}
+
+fetch_data() {
+    local conf=$1
+    for ss in ${subsystems}; do
+        fetch_data__ss $conf $ss
+    done
+}
+
+if [[ ! -f cfg_ss.env ]]; then
+    echo "KO Not configured. Run bin/configure reconfigure"
+    exit 1
+fi
+
+source_env
+
+if [[ -z "$1" ]]; then
+    >&2 echo "KO 66099 "
+    exit 1
+fi
+
+fetch_data $1
+
+exit 0
+

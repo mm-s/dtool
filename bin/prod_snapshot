@@ -1,0 +1,8 @@
+#!/bin/bash
+
+bin/configure leases
+bin/configure info_vm INF_prod__main
+
+#bring state of
+#vmlon05.cto.script.tv
+

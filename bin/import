@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+
+function proc__www__backend {
+	echo "www__backend"
+	rm -f .gitignore
+	rm -rf .idea
+	rm -f README.md
+	mv seed/Administration/* .
+	rm seed -rf
+	mv Makefile makefile
+}
+
+
+function proc {
+	dstdir=$1
+	srcgit=$2
+	srcbranch=$3
+	hash=$(cat doc/src_info | grep "^${dstdir} " | awk '{ print $4 }')
+	if [[ "_$hash" == "_" ]]; then
+		if [[  -d ${dstdir} ]]; then
+			1>&2 echo "KO 8978 ${dstdir exists}"
+			exit 1
+		fi
+		git clone --branch ${srcbranch} --single-branch --depth 1 ${srcgit} ${dstdir}
+		pushd ${dstdir} > /dev/null
+			hash=$(git rev-parse HEAD)
+			rm .git -rf
+			echo "${dstdir} ${srcgit} ${srcbranch} $hash" >> ../doc/src_info
+			proc__${dstdir}
+		popd > /dev/null
+	fi
+	echo "hash=$hash"
+}
+
+mkdir -p doc
+proc "www__backend" "git@github.com:scriptnetwork/Script-Tv-Backend.git" "main"
+
+

@@ -1,0 +1,1325 @@
+#!/bin/bash
+
+help() {
+    cat << EOF
+Script-TV devops tool. Version ${version}.
+    - config file: ${datadir}/config
+    - build mode: ${build_mode}
+    - This Operating System is $OSTYPE
+      $(uname -a)
+    - CI: ${devuser}@${vm__ci}
+    - My dev VM is ${my_vm__test}
+    - My dev VM (node) is ${my_vm__node}
+    - My testnet node is ${my_vm__testnet__node}
+
+Usage:
+    $0 [options] <command>
+
+Options:
+    --home <path> ........... Homedir. [${libconfigure__home}]
+    --cfg_ss <file>.......... Use given subsystems configuration file.
+    --cfg_hosts <file> ...... Use given hosts definition file.
+    --debug ................. Set 'debug' build mode.
+    --release ............... Set 'release' build mode.
+    --batch ................. non-interactive.
+    --save .................. Mode changes are set persistent (preceeding arguments are not affected).
+    --verbose ............... Show confirmation messages. [${verbose}]
+    --verbose_build [0|1] ... Hide/show compilation details during the build process. [${verbose_build}]
+
+Subsystem/hosts configuration commands: cfg files cfg_ss.env and cfg__hosts.env
+    link ................ Interactively links cfg_ss.env and cfg__hosts.env
+    link_ss <dir> <net> <inst> <mnemonic> ........
+                    ..... link a single-subsystem (dir)
+                          Example: bin/configure link_ss fe/main central lon m1
+    link_ss <cfg_ss> .... link subsystems in given cfg file.
+    link_hosts .......... re-link only cfg_hosts
+    link_ss_deps ........ link a single-subsystem + all its dependent subsystems.
+    unlink .............. Unlink both cfg_ss.env and cfg__hosts.env
+    reconfigure ......... clean + link
+
+CI computer:              ${devuser}@${vm__ci}
+    remote .............. ssh into in the CI computer.
+    github .............. Add this key in your github account's settings|ssh keys. (needed to clone system). 
+    vm_deploy ........... Build in build-computer + deploy in VM.
+
+Node computer:
+    ssh node ............ ssh as root in your dev node. [${my_vm__node}]
+    ssh testnet ......... ssh as root in your testnet node. [${my_vm__testnet__node}]
+
+Compilation cache: [cache dir: ${datadir}/cache/${build_mode}]
+    cache ............... Interactively cached entries.
+    clear_cache <ss> .... Clear cached entries for given subsystem (or 'all').
+
+Info commands:
+    ss_available ........ List available subsystems.
+    ss_linked ........... List linked subsystems.
+    build_deps .......... Print the apt/brew line for building (CI servers).
+    runtime_deps .........Print the apt/brew line for runtime (local install).
+    list_ports .......... System TCP listening ports.
+    print_conf .......... Print current configuration.
+    lint_check .......... Find offences in the source code.
+    dep_graph ........... Output subsystem dependency graph.
+    cables .............. Prnts variables needed by subsystems + dependency info.
+
+VM pool:
+    info_vm [<vm>]....... Prints VM details.
+    leases .............. Lists all VMs and its current use.
+
+Certificate Authority (CA):
+    create_wilcard_cert [<subdomain>] ...
+    .                     Produces SSL cert for *.subdomain (any host)
+    postfix_bundle ...... Creates PEM bundle for postfix SMTPS servers.
+
+Misc:
+    ssh [<vm>] .......... ssh into VM as root. See leases.
+                          keywords:
+                              [empty|test] -> ssh into test VM
+                              [node]       -> ssh into stagenet node VM 
+    report_issue ........ Starts recording. Reproduce the issue.
+                          CTRL-D will place the recording in your VM:/tmp/issue
+    watch_issue <XX> .... Watch the issue reported by [XX].
+    cleanup ............. (invoke with sudo) useful to fix previous calls with sudo.
+    help ................ Print this.
+
+EOF
+    echo_status
+    cat << EOF
+
+Next steps after configure:
+    make ................ Produce installers [${build_mode}].
+    make deploy ......... Deliver and execute installer in target hosts.
+    make deploy_dryrun .. Do all processing without writing target VM's.
+
+EOF
+    if [[ "_${my_vm__test}" == "_" ]]; then
+        echo "WA - It looks like you don't have an VM, please ask for one in the HoT slack channel."
+    fi
+    echo
+}
+
+echo_status() {
+    cat << EOF
+Status:
+    cfg_ss.env .......... Subsystems def file.
+EOF
+    if [[ -f cfg_ss.env ]]; then
+        echo "          * Linked. $(ls -la ./cfg_ss.env | awk '{ print $NF }')"
+    else
+        echo "          * Not Linked."
+    fi
+    cat << EOF
+    cfg_hosts.env ....... Hosts def file.
+EOF
+    if [[ -f cfg_hosts.env ]]; then
+        echo "          * Linked. $( ls -la ./cfg_hosts.env | awk '{ print $NF }')"
+    else
+        echo "          * Not Linked."
+    fi
+    cat << EOF
+EOF
+}
+
+on__cfg_ss() {
+    echo ""
+}
+
+on__cfg_hosts() {
+    echo ""
+}
+
+list_ss_conf() {
+    source_env  > /dev/null
+    for ss in ${subsystems}; do
+        echo "${ss}"
+    done
+}
+
+lint_check_dir() {
+    local pwd=$(pwd)
+    for f in $(find . -type f | grep ".*\.properties\$"); do
+        f=$(echo $f | sed "s#^\./\(.*\)#\1#")
+        echo -n "file $pwd/$f"
+        cat $f | grep "script\.tv" > /dev/null
+        if [[ $? -ne 0 ]]; then
+            echo "... Found string script.tv !!!!!!!!!!!"
+        else
+            echo "... OK"
+        fi
+    done
+}
+
+dep_graph_all() {
+    1>2 echo "KO 34494 Not implemented."
+    exit 1
+}
+
+select_conf__ss() {
+    if [[ -f cfg_ss.env ]]; then
+        echo -n "Using configuration "
+        ls -la cfg_ss.env | awk '{ print $NF }'
+        echo
+        exit 0
+    fi
+    ls -1 cfg/ss/*.env | nl
+    echo -n "select subsystem configuration: "
+    read x
+    file=$(ls -1 cfg/ss/*.env | nl | grep -P "^ *${x}\t" | awk '{ print $NF }')
+    link_ss__file $file
+}
+
+cache_mgr() {
+    if [[ $batch -eq 1 ]]; then
+        >&2 echo "KO 99382 Function not available in batch mode."
+        exit 1
+    fi
+    local cdir=${cachedir}/${build_mode}
+    mkdir -p ${cdir}
+    rm -f /tmp/tmp685
+    touch /tmp/tmp685
+    find ${cdir} -type f -name "cache_root" | sed "s#^${cdir}/\(.*\)/cache_root#\1#" >> /tmp/tmp685
+    rm -f /tmp/tmp686
+    touch /tmp/tmp686
+    for ss in $(cat /tmp/tmp685 | xargs); do
+        local x="."
+        local dir""
+        local pfx=""
+        for dir in $(echo "$ss" | tr '/' ' ' | xargs -n 1 ); do
+            x="${x}/$dir"
+            #pfx="    $pfx"
+            echo "${pfx}$(echo "${x}" | sed 's#^\./\(.*\)#\1#')" >> /tmp/tmp686
+        done
+    done
+#cat /tmp/tmp686 | xargs -n 1 | sort
+#echo "---"
+    export LC_COLLATE=C
+    cat /tmp/tmp686 | sort | uniq | nl > /tmp/tmp687 
+    rm -f /tmp/tmp685
+    rm -f /tmp/tmp686
+#    list_ss | sort | nl > /tmp/tmp687
+    #find ${cdir} -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | nl > /tmp/tmp687
+    n=$(cat /tmp/tmp687 | wc -l | tr -d ' ')
+    if [[ $n -eq 0 ]]; then
+        echo "Cache for build mode \"${build_mode}\" is already clean"
+        echo "Directory: ${cdir}"
+        rm /tmp/tmp687
+        exit 0
+    fi
+    echo "Subsystems in cache (build_mode \"${build_mode}\"):"
+    echo "Directory: ${cdir}"
+    cat /tmp/tmp687
+    echo
+    echo -n "Enter 0 to delete all, or a number to delete the corresponding subssystem cache: "
+    read x
+    ss="all"
+    if [[ $x -ne 0 ]]; then
+        ss=$(cat /tmp/tmp687 | xargs -n 2 | grep "^$x " | awk '{ print $2 }')
+        echo "Clear \"${build_mode}\" cache for subsystem $ss."
+    fi
+    clear_cache ${ss}
+}
+
+env_vm__push() {
+    if [[ "_${my_vm__test}" == "_" ]]; then
+        >&2 echo "KO 68596 VM not set"
+        exit 1
+    fi
+    hosts_conf__push cfg/hosts/dev__VM.env
+}
+
+env_vm__pop() {
+    hosts_conf__pop
+}
+
+gen_setup_dev() {  # old function for setting up accounts in the CI server.
+    cat << EOF
+#!/bin/bash
+dev_handle=$dev_handle
+
+EOF
+    cat << 'EOF'
+
+touch ~/.ssh/known_hosts
+cat ~/.ssh/known_hosts | grep "^github.com " > /dev/null
+if [[ $? -ne 0 ]]; then
+    ssh-keyscan github.com >> ~/.ssh/known_hosts
+    if [[ $? -ne 0 ]]; then
+        >&2 echo "KO 84592"
+        exit 1
+    fi
+fi
+
+let ideps=0
+if [[ ! -d system ]]; then
+    git clone git@github.com:scriptnetwork/system.git
+    if [[ $? -ne 0 ]]; then
+        >&2 echo "KO 84593"
+        exit 1
+    fi
+    let ideps=1
+fi
+
+pushd system > /dev/null
+    git checkout ${dev_handle}/main
+    git pull
+    bin/configure --save --dev_handle ${dev_handle} vm  --release
+
+    echo "Automatic Deployment interrupted here. Work in progress."
+    echo "Come over and do it manually!."
+    ## install build deps if conf_ss changes
+    #touch .prev_ss_hash
+    #h0=\$(cat prev_ss_hash)
+    #h1=\$(cat cfg/ss/${dev_handle}.env | shasum -a 256 | awk '{ print $1 }')
+    #if [[ "_h0" != "_h1" ]]; then
+    #    let ideps=1
+    #fi
+    #if [[ \$ideps -eq 1 ]] then
+    #    sudo bin/configure build_deps
+    #    if [[ \$? -ne 0 ]]; then
+    #        >&2 echo "KO 84593"
+    #        exit 1
+    #    fi
+    #    sudo bin/configure dev_deps
+    #    if [[ \$? -ne 0 ]]; then
+    #        >&2 echo "KO 84593"
+    #        exit 1
+    #    fi
+    #    echo $h1 > .prev_ss_hash
+    #fi
+    #make
+    #if [[ \$? -ne 0 ]]; then
+    #    >&2 echo "KO 84593"
+    #    exit 1
+    #fi
+    #make deploy
+popd > /dev/null
+
+EOF
+}
+
+gen_install_dev() {
+    local devuser=$1
+    cat << EOF
+#!/bin/bash
+setup_devuser() {
+    cat /etc/passwd | grep "^${devuser}:x" >/dev/null
+    if [[ \$? -ne 0 ]]; then
+        echo "Generating ${devuser} password."
+        local devuser_passwd=\$(< /dev/urandom tr -dc A-Za-z0-9 | head -c10)
+        echo "adding user ${devuser}."
+        adduser --disabled-password --gecos "" ${devuser}
+        echo "${devuser}:\${devuser_passwd}" | chpasswd
+    else
+        echo "user ${devuser} already exists."
+    fi
+}
+
+setup_sshkey() {
+    if [[ ! -f /tmp/sshkey ]]; then
+        >&2 echo "KO 66878"
+        exit 1
+    fi
+    sshkey=\$(cat /tmp/sshkey)
+    if [[ $? -ne 0 ]]; then
+        >&2 echo "KO 66879"
+        exit 1
+    fi
+    echo sshkey="\$sshkey"
+    if [[ ! -f /home/${devuser}/.ssh/id_rsa ]]; then
+        su ${devuser} -c "ssh-keygen -t rsa -f /home/${devuser}/.ssh/id_rsa -N \"\""
+    fi
+
+    touch /home/${devuser}/.ssh/authorized_keys
+    let n=\$(cat /home/${devuser}/.ssh/authorized_keys | grep "\$sshkey" | wc -l | tr -d ' ')
+    if [[ \$n -eq 0 ]]; then
+        echo "\$sshkey" >> /home/${devuser}/.ssh/authorized_keys
+        echo "key added to authorized_keys"
+    else
+        echo "key already in authorized_keys"
+    fi
+
+}
+
+setup_devuser
+setup_sshkey
+
+exit 0
+
+EOF
+}
+
+final_msg() {
+    if [[ -f cfg_ss.env ]]; then
+        if [[ ! -d ${output_dir} ]]; then
+            echo "Hint: make"
+        fi
+        if [[ -d ${output_dir} ]]; then
+            echo -n "Hint: make deploy"
+        fi
+        echo
+    fi
+}
+
+iterate_over_ss() {
+    for ss in $(list_ss); do
+        pushd ${ss}/lib > /dev/null
+            echo -n "shell at $ss? [y|N]:"
+            read x
+            if [[ $x == "y" ]]; then
+                (cd $(pwd) && bash)
+            fi
+        popd > /dev/null
+    done
+}
+
+link_ss_() {
+    local ss=$1
+    local ss_network=$2
+    local ss_instance=$3
+    local m=$4
+    if [[ "_$m" == "_" ]]; then
+        echo "machine not specified. Assuming m1"
+        m="m1"
+    fi
+    cat << EOF > /tmp/cfg_ss.env
+. cfg/ss/lib/dev.env
+add_ss ${ss} ${ss_network} ${ss_instance}
+EOF
+    echo "/tmp/cfg_ss.env"
+    echo "-------------"
+    cat /tmp/cfg_ss.env
+    echo "-------------"
+    link_ss__file /tmp/cfg_ss.env
+    if [[ -f cfg_hosts ]]; then
+        echo "hosts are configured,.. checking"
+        cat cfg_hosts | grep "^${m}=" > /dev/null
+        if [[ $? -ne 0 ]]; then
+            echo "machine $m not found in cfg_hosts.env"
+            link_hosts__file unlink
+        fi
+        echo "OK. machine $m can be resolved with current cfg_hosts.env."
+    fi
+}
+
+sshvm() {
+    local vm=$1
+    vm=$(vm_root_name ${vm})
+    libvmpool__vm_as ${vm} m0
+    local user=root
+    echo "Initiating ssh connection to ${vm}"
+    libvmpool__print_vm ${vm}
+    ssh -p ${m0__sshport} ${user}@${m0__server_name}
+}
+
+################################################################################
+###################################################### user entry points
+################################################################################
+
+user__gen__set_vars__review_file() {
+    mk_target__gen__set_vars__review_file  be/L1/script4/lib/mk_target.env
+}
+
+user__gen_var_echo() {
+
+#    mk_target__vars__echo__gen__file \
+#            lib/mk_target/libbuild_URL.env  \
+#            lib/mk_target/_generated/liburl__vars__echo.env "liburl__" 
+
+    mk_target__vars__echo__gen__file \
+            be/L1/script4/lib/mk_target.env  \
+            be/L1/script4/lib/mk_target__vars__echo.env "mk_target__" 
+
+    mk_target__vars__echo__gen__file \
+            be/L1/bridge_eth/lib/mk_target.env  \
+            be/L1/bridge_eth/lib/mk_target__vars__echo.env "mk_target__" 
+
+    mk_target__vars__echo__gen__file \
+            db/explorer/lib/mk_target.env  \
+            db/explorer/lib/mk_target__vars__echo.env "mk_target__" 
+
+    mk_target__vars__echo__gen__file \
+            be/explorer/lib/mk_target.env  \
+            be/explorer/lib/mk_target__vars__echo.env "mk_target__" 
+
+    mk_target__vars__echo__gen__file \
+            fe/explorer/lib/mk_target.env  \
+            fe/explorer/lib/mk_target__vars__echo.env "mk_target__" 
+
+    mk_target__vars__echo__gen__file \
+            be/wallet/lib/mk_target.env  \
+            be/wallet/lib/mk_target__vars__echo.env "mk_target__" 
+
+    mk_target__vars__echo__gen__file \
+            fe/wallet/lib/mk_target.env  \
+            fe/wallet/lib/mk_target__vars__echo.env "mk_target__" 
+
+    mk_target__vars__echo__gen__file \
+            fe/wallet/lib/mk_target.env  \
+            fe/wallet/lib/mk_target__vars__echo.env "mk_target__" 
+
+    mk_target__vars__echo__gen__file \
+            fe/faucet/lib/mk_target.env  \
+            fe/faucet/lib/mk_target__vars__echo.env "mk_target__" 
+
+    mk_target__vars__echo__gen__file \
+            db/main/lib/mk_target.env  \
+            db/main/lib/mk_target__vars__echo.env "mk_target__" 
+
+    mk_target__vars__echo__gen__file \
+            be/main/lib/mk_target.env  \
+            be/main/lib/mk_target__vars__echo.env "mk_target__" 
+
+    mk_target__vars__echo__gen__file \
+            fe/main/lib/mk_target.env  \
+            fe/main/lib/mk_target__vars__echo.env "mk_target__" 
+
+    n=1
+}
+
+user__ss_it() {
+    iterate_over_ss
+}
+
+user__link() {
+    local ask1=$1
+    if [[ $batch -eq 1 ]]; then
+        >&2 echo "KO 99382 Function not available in batch mode."
+        exit 1
+    fi
+    if [[ -f cfg_ss.env ]]; then
+        echo -n "subsystems are already configured: "
+        ls -la cfg_ss.env | awk '{ print $NF }'
+    else
+        echo "Select subsystem configuration"
+        select_conf__ss
+        if [[ $? -ne 0 ]]; then
+            exit 1
+        fi
+    fi
+    link_h $ask1
+    final_msg
+}
+
+user__link_ss() {
+    local ss=$1
+    if [[ "_$ss" == "_" ]]; then
+        >&2 echo "subsystem cfg file:"
+        >&2 ls -1 cfg/ss
+        >&2 echo "subsystem dirs:"
+        >&2 list_ss
+        >&2 echo "KO 49032 Invalid subsystem. give one of the list above."
+        exit 1
+    fi
+    if [[ -d $ss ]]; then
+        let n=4  ##consume args
+        local ss_network=$2
+        local ss_instance=$3
+        local m=$4
+        link_ss_ ${ss} ${ss_network} ${ss_instance} ${m}
+    elif [[ -f $ss ]]; then
+        let n=1  ##consume args
+        link_ss__file $ss
+    fi
+    final_msg
+}
+
+user__make_ss() {
+    local ss=$1           #e.g. fe/explorer
+    local ss_network=$2
+    local ss_instance=$3  
+    local m=$4            #mnemonic e.g. m1
+    let n=4  ##consume args
+    save_cfg
+    link_ss_ ${ss} ${ss_network} ${ss_instance} ${m}
+    if [[ $? -ne 0 ]]; then
+        restore_cfg
+        >&2 pwd
+        >&2 echo "KO 84216 "
+        exit 1
+    fi
+    #make
+    bin/build.sh --only-dotool $ss
+    if [[ $? -ne 0 ]]; then
+        restore_cfg
+        >&2 pwd
+        >&2 echo "KO 84217 "
+        exit 1
+    fi
+    restore_cfg
+}
+
+user__link_ss_deps() {
+    >&2 echo "KO 34938 Not implemented"
+    exit 1
+}
+
+user__unlink() {
+    cfg_unlink
+    final_msg
+}
+
+user__clean() {
+    >&2 echo "KO 33079 Not implemented"
+    exit 1
+}
+
+user__reconfigure() {
+    if [[ $batch -eq 1 ]]; then
+        >&2 echo "KO 99382 Function not available in batch mode."
+        exit 1
+    fi
+    cfg_unlink
+    user__link 0
+}
+
+user__link_hosts() {
+    local f=$1
+    if [[ "_$f" == "_" ]]; then
+        if [[ $batch -eq 1 ]]; then
+            >&2 echo "KO 99382 Function not available in batch mode."
+            exit 1
+        fi
+        link_hosts__file unlink
+        link_h 0
+    else
+        link_hosts__file $f
+        n=1
+    fi
+    final_msg
+}
+
+user__build_debs() {
+    libconfigure__print_build_debs
+}
+
+user__build_deps() {
+    echo "sudo apt install -y $(libconfigure__print_build_debs)"
+}
+
+user__runtime_deps() {
+    source_env  > /dev/null
+    rm -f /tmp/apt
+    touch /tmp/apt
+    system__deps_runtime__apt >> /tmp/apt
+    libsecrets__deps_runtime__apt >> /tmp/apt
+    echo "################################################"
+    echo "# apt line for runtime dependencies. Subsystems:"
+    while read -r line; do
+        ss=$(echo "$line" | awk '{ print $1 }')
+        ss_network=$(echo "$line" | awk '{ print $2 }')
+        ss_instance=$(echo "$line" | awk '{ print $3 }')
+        m=$(echo "$line" | awk '{ print $4 }')
+        echo -n "#    * ${ss} ${ss_network} ${ss_instance}: "
+        ss__push ${ss} ${ss_network} ${ss_instance} $m
+            mk_target__deps_runtime__apt | xargs | tee -a /tmp/apt
+        ss__pop
+    done < /tmp/ssi
+    echo "# (invoke with sudo to execute)"
+    echo "################################################"
+    apt=$(cat /tmp/apt | xargs -n1 | sort | uniq | xargs)
+    echo "sudo apt install -y ${apt}"
+    rm -f /tmp/apt
+}
+
+user__print_subsystems() {
+    libdotool__print_subsystems
+}
+
+user__lint_check() {
+    source_env  > /dev/null
+    local ss
+    for ss in ${subsystems}; do
+        pushd ${ss}  > /dev/null
+            lint_check_dir
+        popd > /dev/null
+    done
+}
+
+user__dep_graph() {
+    dep_graph_all
+ # | tr ' ' '\n' | sort | uniq
+}
+
+check_asciinema() {
+    which asciinema > /dev/null
+    if [[ $? -ne 0 ]]; then
+        env_vm__pop
+        >&2 echo "KO 66858 asciinema is not installed"
+        >&2 echo "Please execute the following line and repeat the command."
+        >&2 echo "sudo apt install asciinema"
+        exit 1
+    fi
+}
+
+user__watch_issue() {
+    local dev=${1,,}
+    if [[ "_$dev" == "_" ]]; then
+        dev=${dev_handle,,}
+    fi
+    check_asciinema
+    rm -f /tmp/issue.cast
+    if [[ $? -ne 0 ]]; then
+        >&2 echo "KO 66856 cannot delete file /tmp/issue.cast"
+        exit 1
+    fi
+    if [[ -f /tmp/issue.cast ]]; then
+        >&2 echo "KO 66855 file /tmp/issue.cast should not exist."
+        exit 1
+    fi
+    echo "fetching cast from [${dev^^}] VM..."
+    echo "scp root@${dev}.script.tv:/tmp/issue.cast /tmp"
+    scp root@${dev}.script.tv:/tmp/issue.cast /tmp
+    if [[ $? -ne 0 ]]; then
+        >&2 echo "KO 66857"
+        exit 1
+    fi
+    echo "========== PLAY ==========="
+    echo "asciinema play /tmp/issue.cast"
+    asciinema play /tmp/issue.cast
+}
+
+user__report_issue() {
+    env_vm__push
+    local ip=$(ssh_ip)
+    local port=$(ssh_port)
+    if [[ $ip == "" ]]; then
+        env_vm__pop
+        >&2 echo "KO 66158 Can't get ip address of VM"
+        exit 1
+    fi
+    check_asciinema
+    rm -f /tmp/issue.cast
+    asciinema rec /tmp/issue.cast
+    if [[ $? -ne 0 ]]; then
+        env_vm__pop
+        >&2 echo "KO 66851 asciinema finished with error code."
+        exit 1
+    fi
+    if [[ ! -f /tmp/issue.cast ]]; then
+        env_vm__pop
+        >&2 echo "KO 66889 /tmp/issue.cast not created."
+        exit 1
+    fi
+    echo "sending issue.cast to $ip:$port/tmp/issue.cast"
+    echo "scp -P $port /tmp/issue.cast root@$ip:/tmp/ "
+    scp -P $port /tmp/issue.cast root@$ip:/tmp/
+    echo "Thanks for reporting, now type something like this in the HoT slack channel:"
+    echo "@Marcos I, [${dev_handle}], just reported an issue."
+    env_vm__pop
+}
+
+user__info_vm() {
+    local vm=$1
+    if [[ -z $vm ]]; then
+        if [[ "_${dev_handle}" != "_XX" ]]; then
+            vm=$(vm_dev ${dev_handle})
+            libvmpool__print_vm $vm
+        else
+            >&2 print_leases__columns
+            >&2 echo
+            >&2 echo "KO 01922 Missing VM. Input an VM from the list above."
+        fi
+        return
+    fi
+    n=1
+    libvmpool__print_vm $vm
+}
+
+user__dev_node() {
+    source_env
+    vm=$(vm_nod ${dev_handle})
+    if [[ -z ${vm} ]]; then
+        >&2 echo "KO 75978 Cannot resolve VM \"${vm}\"."
+        exit 1
+    fi
+    vm=$(vm_root_name ${vm})
+    libvmpool__print_vm ${vm}
+}
+
+user__sshcmd() {
+    local cmd="$1"
+    shift
+    n=1
+    source_env
+    if [[ -z $vm ]]; then
+        vm=$(vm_dev ${dev_handle})
+    fi
+    if [[ -z ${vm} ]]; then
+        >&2 print_leases__columns
+        >&2 echo "KO 88978 Cannot resolve VM \"${vm}\"."
+        exit 1
+    fi
+    libvmpool__vm_as ${vm} m0
+    local user=root
+    #echo "Initiating ssh connection"
+    #libvmpool__print_vm ${vm}
+    ssh -p ${m0__sshport} ${user}@${m0__server_name} "$cmd"
+}
+
+user__sshcmd_nod() {
+    local cmd="$1"
+    shift
+    n=1
+    source_env
+    if [[ -z $vm ]]; then
+        vm=$(vm_nod ${dev_handle})
+    fi
+    if [[ -z ${vm} ]]; then
+        >&2 print_leases__columns
+        >&2 echo "KO 87978 Cannot resolve VM \"${vm}\"."
+        exit 1
+    fi
+    libvmpool__vm_as ${vm} m0
+    local user=root
+    #echo "Initiating ssh connection"
+    #libvmpool__print_vm ${vm}
+    ssh -p ${m0__sshport} ${user}@${m0__server_name} "$cmd"
+}
+
+select__help() {
+    echo "central devnet testnet mainnet "
+}
+
+selected_menu=""
+
+select_menu() {
+    local file=$1
+    local prompt=$2
+    cat $file #print menu
+    echo
+    echo -n "$prompt [0]: "
+    read x
+    if [[ -z "$x" ]]; then
+        selected_menu=""
+    else
+        selected_menu=$(cat $file | awk '{ print $1" "$2 }' | grep "^$x " | awk '{ print $2 }')
+    fi
+    rm -f $file
+}
+
+status_program__root() {
+    cat << EOF
+
+EOF
+}
+
+mainnet_status__vm() {
+    local vm=$1
+    status_program__root
+    #status_program__stv
+}
+
+mainnet_status() {
+    for vm in $segment__p2p_mainnet; do
+        mainnet_status__vm $vm
+    done
+}
+menu_set() {
+    echo "1 ssh"
+    echo "2 fetch_status"
+}
+
+select__mainnet() {
+    menu_set > /tmp/eeo9845
+    select_menu /tmp/eeo9845 "action"
+    local action=$selected_menu
+    if [[ -z "$action" ]]; then
+        >&2 echo "KO 21091 no action selected"
+        rm -f /tmp/eeo9845
+        exit 1
+    fi
+    if [[ $action == "ssh" ]]; then
+        list_aliases__p2p_mainnet > /tmp/eeo9845
+        select_menu /tmp/eeo9845 "ssh"
+        local vm=$selected_menu
+        if [[ -z "$vm" ]]; then
+            >&2 echo "KO 22093 no option selected"
+            rm -f /tmp/eeo9845
+            exit 1
+        fi
+        sshvm $vm
+    elif [[ $action == "2" ]]; then
+        mainnet_status
+    else
+        >&2 echo "KO 22093 invalid action"
+        rm -f /tmp/eeo9845
+        exit 1
+    fi
+    rm -f /tmp/eeo9845
+}
+
+select__testnet() {
+    list_aliases__p2p_testnet > /tmp/eeo9845
+    select_menu /tmp/eeo9845 "ssh"
+    local vm=$selected_menu
+    if [[ -z "$vm" ]]; then
+        >&2 echo "KO 22094 no option selected"
+        rm -f /tmp/eeo9845
+        exit 1
+    fi
+    sshvm $vm
+}
+
+select__devnet() {
+    list_aliases__devnet > /tmp/eeo9845
+    select_menu /tmp/eeo9845 "ssh"
+    local vm=$selected_menu
+    if [[ -z "$vm" ]]; then
+        >&2 echo "KO 22094 no option selected"
+        rm -f /tmp/eeo9845
+        exit 1
+    fi
+    sshvm $vm
+}
+
+select__central() {
+    list_aliases__central > /tmp/eeo9845
+    select_menu /tmp/eeo9845 "ssh"
+    local vm=$selected_menu
+    if [[ -z "$vm" ]]; then
+        >&2 echo "KO 22094 no option selected"
+        rm -f /tmp/eeo9845
+        exit 1
+    fi
+    sshvm $vm
+}
+
+user__select() {
+    local str="$1"
+    shift
+    n=1
+    if [[ "_$str" == "_mainnet" ]]; then
+        select__mainnet
+        exit $?
+    fi
+    if [[ "_$str" == "_testnet" ]]; then
+        select__testnet
+        exit $?
+    fi
+    if [[ "_$str" == "_devnet" ]]; then
+        select__devnet
+        exit $?
+    fi
+    if [[ "_$str" == "_central" ]]; then
+        select__central
+        exit $?
+    fi
+    select__help
+}
+
+user__ssh() {
+    local vm=$1
+    shift
+    n=1
+    #source_env
+    if [[ "_$vm" == "_node" ]]; then
+        vm=$(vm_nod ${dev_handle})
+    fi
+    if [[ "_$vm" == "_testnet" ]]; then
+        vm=$(vm_tn ${dev_handle})
+    fi
+    if [[ "_$vm" == "_test" ]]; then
+        vm=$(vm_dev ${dev_handle})
+    fi
+    if [[ "_$vm" == "_prod" ]]; then
+        ssh_prod $@
+        exit $?
+    fi
+    if [[ -z $vm ]]; then
+        vm=$(vm_dev ${dev_handle})
+    fi
+    if [[ -z ${vm} ]]; then
+        >&2 print_leases__columns
+        >&2 echo "KO 88978 Cannot resolve VM \"${vm}\"."
+        exit 1
+    fi
+    sshvm $vm
+}
+
+user__remote() {
+    source_env
+    local user=${devuser}
+    libvmpool__vm_as ${vm__ci} m0
+    local svr=${m0__server_name}
+    local port=${m0__sshport}
+    make_vm_a_known_host ${vm__ci}
+
+    rm -f /tmp/sshoutput
+    touch /tmp/sshoutput
+    2>/tmp/sshoutput ssh -p $port ${user}@${svr}
+    cat /tmp/sshoutput | head -n1 | grep "Permission denied" > /dev/null
+    if [[ $? -eq 0 ]]; then
+        cat /tmp/sshoutput
+        rm /tmp/sshoutput
+        echo "It looks like the user $devuser is not set up in your VM"
+        echo -n "Do you want me to set it up for you? (provided this account can ssh as root) [y/n]: "
+        read ans
+        if [[ "_$ans" == "_y" ]]; then
+            gen_install_dev ${devuser} > /tmp/exec11
+            echo "Transmitting public key: "
+            scp -P $port ~/.ssh/id_rsa.pub root@${svr}:/tmp/sshkey
+            echo "Transmitting account setup script (/tmp/exec11): "
+            scp -P $port /tmp/exec11 root@${svr}:/tmp
+            echo "Executing account setup script: "
+            ssh -p $port root@${svr} "chmod +x /tmp/exec11; /tmp/exec11"
+            if [[ $? -eq 0 ]]; then
+                ssh -p $port ${user}@${svr}
+            else
+                >&2 echo "KO 22101 Something went wrong setting up user $devuser"
+                rm -f /tmp/exec11
+                exit 1
+            fi
+            rm -f /tmp/exec11
+        else
+            >&2 echo "KO 22100 Unable to ssh with user $devuser"
+            exit 1
+        fi
+    fi
+    if [[ -f /tmp/sshoutput ]]; then
+        ne=$(cat /tmp/sshoutput | wc -l | tr -d ' ')
+        if [[ $ne -gt 0 ]]; then
+            cat /tmp/sshoutput
+            rm -f /tmp/sshoutput
+            exit 1
+        fi
+        rm -f /tmp/sshoutput
+    fi
+}
+
+user__github() {
+    env_vm__push
+    local user=${devuser}
+    libvmpool__vm_as ${vm__ci} m0
+
+    local svr=${m0__server_name}
+    local port=${m0__sshport}
+    make_vm_a_known_host ${vm__ci}
+
+    rm -f /tmp/sshoutput
+    touch /tmp/sshoutput
+    2>/tmp/sshoutput ssh -p $port ${user}@${svr} "cat ~/.ssh/id_rsa.pub"
+    cat /tmp/sshoutput | head -n1 | grep "Permission denied" > /dev/null
+    if [[ $? -eq 0 ]]; then
+        >&2 echo "KO 78690 The user $devuser is not set up in your VM. hint: bin/configure remote"
+        exit 1
+    fi
+    if [[ -f /tmp/sshoutput ]]; then
+        ne=$(cat /tmp/sshoutput | wc -l | tr -d ' ')
+        if [[ $ne -gt 0 ]]; then
+            cat /tmp/sshoutput
+            rm -f /tmp/sshoutput
+            exit 1
+        fi
+        rm -f /tmp/sshoutput
+    fi
+    env_vm__pop
+}
+
+scp_user_bin() {
+    local file=$1
+    local user=${devuser}
+    libvmpool__vm_as ${vm__ci} m0
+
+    local svr=${m0__server_name}
+    local port=${m0__sshport}
+    make_vm_a_known_host ${vm__ci}
+
+    scp -P $port /tmp/${file} ${user}@${svr}:/home/${devuser}/ > /dev/null
+    rm -f /tmp/${file}
+    touch /tmp/sshoutput
+    2>&1 ssh -p $port ${user}@${svr} "mkdir -p bin; mv ${file} bin/; chmod +x bin/${file};" | tee /tmp/sshoutput
+    cat /tmp/sshoutput | grep "Permission denied." > /dev/null
+    if [[ $? -eq 0 ]]; then
+        >&2 echo
+        >&2 echo "KO 25201 Github complains. Have you given authorization for the key bin/configure github?."
+        rm -f /tmp/sshoutput
+        exit 1
+    fi
+    rm -f /tmp/sshoutput
+}
+
+user__vm_deploy() {
+    env_vm__push
+    local user=${devuser}
+    libvmpool__vm_as ${vm__ci} m0
+    local ip=${m0__ip}
+    local port=${m0__sshport}
+    rm -f /tmp/sshoutput
+    touch /tmp/sshoutput
+    2>/tmp/sshoutput ssh -p $port ${user}@$ip "ls > /dev/null"
+    cat /tmp/sshoutput | head -n1 | grep "Permission denied" > /dev/null
+    if [[ $? -eq 0 ]]; then
+        >&2 echo "KO 78790 The user $devuser is not set up in your VM. hint: bin/configure remote"
+        exit 1
+    fi
+    if [[ -f /tmp/sshoutput ]]; then
+        ne=$(cat /tmp/sshoutput | wc -l | tr -d ' ')
+        if [[ $ne -gt 0 ]]; then
+            cat /tmp/sshoutput
+            rm -f /tmp/sshoutput
+            exit 1
+        fi
+        rm -f /tmp/sshoutput
+    fi
+
+    local file="pull_system"
+    gen_setup_dev > /tmp/${file}
+    scp_user_bin ${file}
+
+    env_vm__pop
+}
+
+user__ss_available() {
+    list_ss
+}
+
+user__ss_linked() {
+    list_ss_conf
+}
+
+user__list_ports() {
+    source_env  > /dev/null
+    list_ports
+}
+
+user__cache() {
+    cache_mgr
+}
+
+user__clear_cache() {
+    clear_cache $@
+    n=1
+}
+
+user__clean_cache() {
+    clear_cache $@
+    n=1
+}
+
+user__help() {
+    help
+}
+
+user__print_conf() {
+    stcfg__print_all_vars
+}
+
+user__cables() {
+    source_env > /dev/null
+    echo "# Subsystems coordination variables"
+    resolve_vars
+}
+
+user__cleanup() {
+    libconfigure__cleanup $@
+}
+
+user__leases() {
+    print_leases__columns
+    echo
+    echo "VM Aliases:"
+    list_aliases #| column -t -s ' '
+    echo
+    echo "More info: bin/configure info_vm <VM>"
+}
+
+user__prod_info() {
+    vms="INF_prod__main INF_prod__testnet_genesis INF_prod__testnet_user1 INF_prod__mainnet_genesis INF_prod__mainnet_user1"
+    for vm in ${vms}; do
+        echo -n "$vm="
+        libvmpool__vm_as $vm m0
+        echo "${m0__server_name}"
+    done
+}
+
+user__create_wilcard_cert() {
+    local domain=$1
+    if [[ -z $1 ]]; then
+        domain="cto.script.tv"
+        local ca_domain="cto.script.tv"
+    else
+        domain="$1.cto.script.tv"
+        local ca_domain=$(echo ${domain} | tr '.' ' ' | cut -d " " -f 2- | tr ' ' '.')
+        n=1
+    fi
+
+    cat << EOF
+You want a wildcard cert for hosts "*.${domain}".
+   
+EOF
+    ssl_certs="${secrets_root}/ssl/certs"
+    cert_file=${domain}.crt
+    if [[ ! -f ${ssl_certs}/${cert_file} ]]; then
+        key_file=${domain}.key
+        libcrypto__create_ssl_cert "${domain}" "${ca_domain}" ${ssl_certs}/${cert_file} ${ssl_certs}/${key_file}
+        echo -n "created new cert: "
+    else
+        echo -n "cert already exists: "
+    fi
+    echo ${ssl_certs}/${cert_file}
+}
+
+user__postfix_bundle() { #host: *.cto.script.tv (for *=mail, mail2)
+    local domain="cto.script.tv"
+    echo "domain: $domain"
+    local ssl_certs="${secrets_root}/ssl/certs"
+    local cert_file=${ssl_certs}/${domain}.crt
+    local key_file=${ssl_certs}/${domain}.key
+    local bundle_file=${ssl_certs}/${domain}__crt_key.pem
+    if [[ -f ${bundle_file} ]]; then
+        echo "Bundle already exists: ${bundle_file}"
+        exit 0
+    fi
+    if [[ ! -f ${cert_file} ]]; then
+        >&2 echo "KO 61059 ${cert_file}"
+        exit 1
+    fi
+    if [[ ! -f ${key_file} ]]; then
+        >&2 echo "KO 66069 ${key_file}"
+        exit 1
+    fi
+    cp ${cert_file} ${bundle_file}
+    cat ${key_file} >> ${bundle_file}
+    echo "Created bundle for postfix SMTPS: ${bundle_file}"
+}
+
+user__() {
+    if [[ $nc -eq 0 ]]; then
+        >&2 help
+        >&2 echo "KO 06660 Missing command."
+        exit 1
+    fi
+    exit 0
+}
+
+init_libconfigure() {
+    . lib/libconfigure.env
+    if $no_init_libs; then
+        return
+    fi
+    verboselog=/dev/null
+    #preset__set_ss
+    if [ "$dev_handle" == "XX" ]; then
+        >&2 echo "KO 40394 Not initialised. Run bin/devtool set_dev"
+        exit 1
+    fi
+    devuser=${dev_handle,,}
+    vm__ci="$(vm_ci ${dev_handle})"
+    my_vm__test="$(vm_dev ${dev_handle})"
+    my_vm__node="$(vm_nod ${dev_handle})"
+    my_vm__testnet__node="$(vm_tn ${dev_handle})"
+}
+
+if [[ "_$0" != "_bin/configure" ]]; then
+    >&2 echo "KO 66949 Wrong location. Execute from system/ directory as bin/configure"
+    exit 1
+fi
+
+echo "$@" | grep '\-\-home ' > /dev/null
+if [[ $? -eq 0 ]]; then
+    libconfigure__home=$(echo "$@" | xargs -n1 | grep '\-\-home' -A1 | tail -n1)
+fi
+
+no_init_libs=false
+echo "$@" | grep 'build_deps' > /dev/null
+if [[ $? -eq 0 ]]; then
+    no_init_libs=true
+fi
+
+init_libconfigure $@
+
+let save=0
+let batch=0
+let n=0 #args consumed by command
+let nc=0 #num commands
+while [[ true ]]; do
+    opt=""
+    while [[ true ]]; do
+        opt=$1
+        shift
+        if [[ "_$opt" == "_" ]]; then
+            break
+        fi
+        if [[ "_$opt" == "_--home" ]]; then
+            #already processed above
+            shift
+            continue
+        fi
+        let nc=$nc+1
+        if [[ "_$opt" == "_--cfg_ss" ]]; then
+            input=$1
+            shift
+            link_ss__file $input
+            continue
+        elif [[ "_$opt" == "_--cfg_hosts" ]]; then
+            input=$1
+            shift
+            link_hosts__file $input
+            continue
+        elif [[ "_$opt" == "_--save" ]]; then
+            let save=1
+            print_verbose "saving flags"
+            continue
+        elif [[ "_$opt" == "_--verbose" ]]; then
+            print_verbose "verbose mode ON"
+            if [[ $save -eq 1 ]]; then
+                stcfg__set_value "verbose" "${verbose}" ${verbose}
+            fi
+            continue
+        elif [[ "_$opt" == "_--verbose_build" ]]; then
+            input=$1
+            shift
+            verbose_build=1
+            if [[ "_${input}" == "_0" ]]; then
+                verbose_build=0            
+            fi 
+            stcfg__set_value "verbose_build" "${verbose_build}" ${verbose}
+            if [[ "_${verbose_build}" == "_0" ]]; then
+                print_verbose "verbose_build mode is OFF"
+            else
+                print_verbose "verbose_build mode is ON"
+            fi
+            continue
+        elif [[ "_$opt" == "_--batch" ]]; then
+            let batch=1
+            print_verbose "non-interactive mode selected."
+            continue
+        elif [[ "_$opt" == "_--debug" ]]; then
+            build_mode="debug"
+            print_verbose "build mode \"$build_mode\" selected."
+            if [[ $save -eq 1 ]]; then
+                stcfg__set_value "build_mode" "${build_mode}" ${verbose}
+            fi
+            continue
+        elif [[ "_$opt" == "_--release" ]]; then
+            build_mode="release"
+            print_verbose "build mode \"$build_mode\" selected."
+            if [[ $save -eq 1 ]]; then
+                stcfg__set_value "build_mode" "${build_mode}" ${verbose}
+            fi
+            continue
+        elif [[ _$opt == _-* ]]; then
+            >&2 echo "KO 60594 Invalid flag $opt"
+            exit 1
+        else
+            break
+        fi
+    done
+    cmd="$opt"
+    let n=0
+#echo "Invoke $cmd"
+    user__$cmd "$@"
+    if [[ $? -ne 0 ]]; then
+        >&2 echo "KO 09990 Invalid command $cmd, or command exited with error."
+        libconfigure__cleanup
+        exit 1
+    fi
+    shift $n
+    let nc=${nc}+1
+    if [[ "_$@" == "_" ]]; then
+        break
+    fi
+done
+
+libconfigure__cleanup
+exit 0
+

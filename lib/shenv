@@ -1,0 +1,102 @@
+#!/bin/bash
+#######################################################
+##  Generated file - do not edit.
+#######################################################
+
+#---------------------------- OS detection
+let macos=0
+let freebsd=0
+let cheribsd=0
+unm=$(uname)
+platform="linux"
+cp_pres="cp --preserve=timestamps"
+if [[ "_$unm" == "_Darwin" ]]; then
+    let macos=1
+    platform="macos"
+    cp_pres="cp -p"
+else
+    if [[ "_$unm" == "_FreeBSD" ]]; then
+        let freebsd=1
+        let cheribsd=1
+        #echo "running on FreeBSD"
+    else
+        if [[ "_$unm" != "_Linux" ]]; then
+            >&2 echo "KO 78699 $unm not supported"
+            exit 1
+
+        fi
+        #echo "running on Linux"
+    fi
+fi
+#-/-------------------------- OS detection
+
+#---------------------------- arch, jobs
+let jobs=0
+arch=""
+if [[ $freebsd -eq 1 || $macos -eq 1 ]]; then
+    sysctl hw.model hw.machine hw.ncpu
+    let jobs=$(sysctl hw.ncpu | awk '{ print $2 }')
+    arch=$(uname -p)
+else
+    let jobs=$(cat /proc/cpuinfo | grep "^processor" | wc -l)
+    arch=$(uname -m)
+fi
+#TODO install with deps
+if [[ $jobs -gt 1 ]]; then
+    let jobs=`echo "$jobs-1" | bc`
+fi
+#echo "jobs0=$jobs"
+#-/-------------------------- arch, jobs
+
+make="make"
+if [[ $freebsd -eq 1 ]]; then
+    make="gmake"
+fi
+
+function freebsd_sedi {
+    sed -i .bak "$1" "$2"
+    if [[ $? -ne 0 ]]; then
+	    >&2 echo "sed -i .bak \"$1\" \"$2\""
+	    >&2 echo "KO 77886 sed failed"
+        exit 1
+    fi
+}
+
+function sedi { #sed -i "s/^str29=.*//" res/strings/${strset}.ovr
+    if [[ ! -f $2 ]]; then
+        >&2 pwd
+        >&2 echo "KO 68851 sedi. file not found. >>>$2<<<"
+        exit 1
+    fi
+
+    if [[ $freebsd -eq 1 || $macos -eq 1 ]]; then
+        freebsd_sedi "$1" "$2"
+        return
+    fi
+    sed -i "$1" "$2"
+    if [[ $? -ne 0 ]]; then
+        >&2 pwd
+        >&2 echo "KO 68852 sedi fail. >>>$1<<< >>>$2<<<"
+        exit 1
+    fi
+}
+
+function patch {
+    ifile=$1
+    ofile=${1%.in}
+    #echo "patch $ifile $ofile"
+    cp $ifile $ofile
+    strs=$(cat $ifile  | grep -o "##ss_[^#]*##" | sed "s/#//g" | xargs | tr ' ' '\n' | sort | uniq | xargs)
+    echo "strs: $strs"
+    for s in $strs; do
+        sedi "s%##$s##%${!s}%g" $ofile
+    done
+    rm $ifile
+}
+
+function patch__in_files {
+	for f in $(find $1 -name "*.in"); do
+		patch $f
+	done
+}
+

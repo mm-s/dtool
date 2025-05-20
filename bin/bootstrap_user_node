@@ -1,0 +1,246 @@
+#!/bin/bash
+
+help() {
+    cat << EOF
+Installs a user node using the 1-liner bash command.
+VM_central__main   (My dev VM) .......... ${VM_central__main}
+VM_p2p__main       (My dev VM (node)) ... ${VM_p2p__main}
+
+Usage:
+
+$0 [options] deploy
+
+Examples
+
+##  Test how well node deployments followup on sw updates published by fe/download
+
+    #Showcase:
+     * deploy central + node
+     * in node tail -f /var/log/updates_script_tv
+     * in node you may need to tweak crontab: /etc/crob.d/script_tv__updates; (set 1mim freq * * * * *); systemctl restart cron
+     * deploy central several times
+     * check the log should be registerin every update happening after every central deployment
+     * make sure state is preserved: key dirs; mongodb; gov db 
+
+    # Node cron activity: Nodes check distributor URL once a day, as programmed in their crontab
+    # 2 VM setup: Deploy distributor(central infrastructure{fe/download}) (VM1); operate node (VM2) as an user
+    bin/bootstrap_user_node --central deploy                  # 1.-   Deploy/re-deploy the central infra(incl fe/download with a new update package) on VM1
+    bin/bootstrap_user_node --p2p deploy                      # 2.-   1st node install using the 1liner, random node_key
+                                                              # 2b.-  1st node install using the 1liner, providing gov key
+    bin/bootstrap_user_node --p2p --node_key 0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20 deploy # set gov key
+
+    Combined:
+    bin/bootstrap_user_node --central --p2p deploy            # 1+2/2b.- Deploy distributor + node from oneliner (1.-gen node_key; 2.-import node_key)
+    bin/bootstrap_user_node --central --p2p --node_key <01..20> deploy   # 1+2/2b.- Deploy distributor + node from oneliner (1.-gen node_key; 2.-import node_key)
+
+Options:
+
+ --central ........... install central infrastructure (provides distr 1liner download link) into dev VM1.
+ --p2p ............... install user node using 1liner download link into dev VM2.
+ --node_key .......... Use given user node private key. e.g. 0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20
+
+ What does this script do:
+ 1.- reconfigures dotool with
+     * cfg/ss/dev__default__plus_distr_testnet
+     * cfg/hosts/dev__VM__plus_distr__testnet
+ 2.- system is compiled and deployed in VM_central__main
+ 3.- Node is installed using the 1-liner command (like users would do following https://download.script.tv/download-install)
+
+
+EOF
+}
+
+deploy_central() {
+    echo "Link configuration: ss/dev__default__plus_distr_testnet + hosts/dev__VM__plus_distr__testnet"
+    cfg_unlink
+    ln -s cfg/ss/dev__default__plus_distr_testnet.env cfg_ss.env
+    ln -s cfg/hosts/dev__VM__plus_distr__testnet.env cfg_hosts.env
+    make clean
+    if [[ $? -ne 0 ]]; then
+        >&2 echo "KO 77960"
+        exit 1
+    fi
+    make deploy_notest
+    if [[ $? -ne 0 ]]; then
+        >&2 echo "KO 77961"
+        exit 1
+    fi
+}
+
+deploy_p2p() {
+    #oneliner example
+    #wget -O install.sh https://download.script.tv/files/script_tv-node-testnet_debian_11_x86_64__install.sh; chmod +x install.sh; ./install.sh
+    if [[ -d be/L1/script4/snapshot ]]; then
+        >&2 echo "KO 50492 Suspicious finding: snapshots dir be/L1/script4/snapshot. L1 wont work in non-production environments with these snapshots" 
+        exit 1
+    fi
+
+
+    local one_liner=$(cat _targets/m1/jail/var/www/script_tv/fe/download/env.js | grep "oneliner_installer__testnet:" | sed 's~.*"\(.*\)".*~\1~')
+    cmd="${one_liner} -batch"
+    if [[ ! -z "${node_key}" ]] then
+        cmd+=" --node_key ${node_key}"
+    fi
+    cat << EOF
+===============================================================================
+SS fe/download is live and node installer can be downloaded.
+
+The next step is to mimic an user executing the 1-liner install command:
+1liner:
+$one_liner
+
+1liner With Aditional flags: 
+cmd: ${cmd}
+
+on machine ${VM_p2p__main}
+
+===============================================================================
+
+EOF
+    echo "Uninstalling p2p/main VM..."
+
+    bin/configure sshcmd_nod  "if [[ -x /usr/local/bin/script_tv__uninstall.sh ]]; then /usr/local/bin/script_tv__uninstall.sh; fi"
+    if [[ $? -ne 0 ]]; then
+        >&2 echo "KO 77965"
+        exit 1
+    fi
+
+    echo "Installing p2p/main VM..."
+    . _targets/env
+    #set -x
+    bin/configure sshcmd_nod  "${cmd}"
+    if [[ $? -ne 0 ]]; then
+        >&2 echo "KO 77966"
+        exit 1
+    fi
+
+        cat << EOF
+################
+## SUCCESS !! ##
+################
+Central Inf: VM ${VM_central__main}
+   main: https://${liburl__domain}
+   genesis node
+       Explorer testnet: https://explorer-testnet.${liburl__domain}
+       Wallet testnet: https://wallet-testnet.${liburl__domain}
+       SSH ACCESS: bin/configure ssh
+
+P2P Inf: VM ${VM_p2p__main}
+   Node: user1.${liburl__domain}
+       Explorer testnet: https://explorer-testnet.user1.${liburl__domain}
+       Wallet testnet: https://wallet-testnet.user1.${liburl__domain}
+       installed with: $cmd
+       SSH ACCESS: bin/configure ssh node
+
+EOF
+}
+
+user__deploy() {
+    if [[ $docentral -eq 1 ]]; then
+        deploy_central
+        echo "Deploment to central/main VM completed."
+    fi
+    if [[ $dop2p -eq 1 ]]; then
+        deploy_p2p
+        echo "Node installation completed."
+    fi
+}
+
+
+user__() {
+    if [[ $nc -eq 0 ]]; then
+        >&2 help
+        >&2 echo "KO 06660 Missing command."
+        exit 1
+    fi
+    exit 0
+}
+
+init_libconfigure() {
+    . lib/libconfigure.env
+    if [ "$dev_handle" == "XX" ]; then
+        >&2 echo "KO 50394 Not initialised. Run bin/devtool set_dev"
+        exit 1
+    fi
+    devuser=${dev_handle,,}
+    vm__ci="$(vm_ci ${dev_handle})"
+    my_vm__test="$(vm_dev ${dev_handle})"
+    my_vm__node="$(vm_nod ${dev_handle})"
+    my_vm__testnet__node="$(vm_tn ${dev_handle})"
+
+
+    VM_central__main=${my_vm__test}
+    VM_p2p__main=${my_vm__node}
+    if [[ -z ${VM_central__main} ]]; then
+        >&2 echo "KO 72978 Cannot resolve VM_central__main__${dev_handle}."
+        exit 1
+    fi
+    if [[ -z ${VM_p2p__main} ]]; then
+        >&2 echo "KO 72979 Cannot resolve VM_p2p__main__${dev_handle}."
+        exit 1
+    fi
+
+
+#    echo "your central__main VM is:"
+#    vm=$(vm_root_name ${VM_central__main})
+#    libvmpool__print_vm ${vm}
+#    echo
+#    echo "your p2p__main VM is:"
+#    vm=$(vm_root_name ${VM_p2p__main})
+#    libvmpool__print_vm ${vm}
+#    echo
+
+}
+
+init_libconfigure $@
+
+let docentral=0
+let dop2p=0
+
+node_key=""
+let n=0 #args consumed by command
+let nc=0 #num commands
+while [[ true ]]; do
+    opt=""
+    while [[ true ]]; do
+        opt=$1
+        shift
+        if [[ "_$opt" == "_" ]]; then
+            break
+        fi
+        let nc=$nc+1
+        if [[ "_$opt" == "_--central" ]]; then
+            let docentral=1
+            continue
+        elif [[ "_$opt" == "_--p2p" ]]; then
+            let dop2p=1
+            continue
+        elif [[ "_$opt" == "_--node_key" ]]; then
+            node_key=$1
+            shift
+            continue
+        else
+            break
+        fi
+    done
+    cmd="$opt"
+    let n=0
+#echo "Invoke $cmd"
+    user__$cmd "$@"
+    if [[ $? -ne 0 ]]; then
+        >&2 help
+        >&2 echo "KO 09990 Invalid command $cmd, or command exited with error."
+        libconfigure__cleanup
+        exit 1
+    fi
+    shift $n
+    let nc=${nc}+1
+    if [[ "_$@" == "_" ]]; then
+        break
+    fi
+done
+
+libconfigure__cleanup
+exit 0
+
+

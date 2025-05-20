@@ -1,0 +1,177 @@
+#!/bin/bash
+
+targets=$1
+shift
+if [[ -z $targets ]]; then
+    targets=_targets
+fi
+
+wait_start=$1
+shift
+
+. lib/libconfigure.env
+. lib/libdeploy.env
+
+load_env_targets ${targets} > /dev/null
+
+function print_result { #sister in test_target.sh
+    local page=$1
+    local line=$2
+    local f=$3
+    if [[ "_$f" == "_0" ]]; then
+        echo -n "info $page === PASS === "
+    else
+        echo -n "info $page *** FAIL *** "
+    fi
+    echo "test: $line"
+}
+
+function run_nmap_test {
+    local m=$1
+    local vm=$2
+    local file="${targets}/${m}/jail/var/script_tv/data_sheet__open_ports"
+    libvmpool__vm_as ${vm} m0
+    while read -r line; do
+        local ss=$(echo "$line" | awk '{ print $1 }')
+        local port=$(echo "$line" | awk '{ print $3 }')
+        local interface=$(echo "$line" | awk '{ print $5 }')
+        local status=$(timeout 10 nmap -p $port ${m0__ip} | grep "^$port/.*" | awk '{ print $1" "$2 }')
+        if [[ "_$(echo "$status" | awk '{ print $2 }')" == "_open" ]]; then
+            echo -n "ok ${ss} port $status. "
+        else
+            if [[ "_${interface}" == "_${all}" ]]; then
+                echo -n "KO ${ss} $status. ***. "
+                fail="1"
+                gfail="1"
+            else
+                echo -n "ok ${ss} port $port (only open to localhost) $status. "
+            fi
+        fi
+        echo $line
+    done < ${file}
+}
+
+function run_url_test {
+    local m=$1
+    if [[ ! -f ${targets}/${m}/zone ]]; then
+        return
+    fi
+    zone=$(cat ${targets}/${m}/zone)
+    timeout 10 ping -4 -q  -c 1 ${zone} > /dev/null 2> /dev/null
+    if [[ $? -eq 0 ]]; then
+        echo -n "ok n/a ping zone $zone"
+    else
+        echo -n "KO n/a ping zone $zone"
+    fi
+    echo
+    if [[ ! -f ${targets}/${m}/hosts ]]; then
+        return
+    fi
+    while read -r line; do
+        local ss=$(echo $line | awk '{ print $1 }')
+        local host=$(echo $line | awk '{ print $2 }')
+        local server=${host}${zone}
+        timeout 10 ping -4 -q  -c 1 ${server} > /dev/null 2> /dev/null
+        if [[ $? -eq 0 ]]; then
+            echo -n "ok $ss ping host $server"
+        else
+            echo -n "KO $ss ping host $server"
+            fail="1"
+            gfail="1"
+        fi
+        echo
+    done < ${targets}/${m}/hosts
+}
+
+function run_blackbox_test {
+    fail="0"
+    run_nmap_test $@
+    print_result 111 "nmap" $fail
+
+    fail="0"
+    run_url_test $@
+    print_result 112 "URL" $fail
+}
+
+function run_whitebox_test {
+    local m=$1
+    local vm=$2
+    libvmpool__vm_as ${vm} m0
+    ssh -p ${m0__sshport} root@${m0__ip} script_tv__test.sh | tee /tmp/xxx432
+    cat /tmp/xxx432 | grep "^KO " > /dev/null
+    if [[ $? -eq 0 ]]; then
+        fail="1"
+        gfail="1"
+    fi
+    rm /tmp/xxx432
+}
+
+function test_deployment__main {
+    if [[ "_${system__DNS__domain}" == "_" ]]; then
+        >&2 echo "KO 78699 system__DNS__domain not set"
+        exit 1
+    fi
+    local machines=$(find ${targets} -type f -name "system__install.sh" | tr '/' ' ' | awk '{ print $2 }' | xargs)
+    for m in $machines; do
+        local var=${m}__method;
+        local method=${!var}
+        if [[ "_${method}" == "_distr" ]]; then
+            echo "info 00 skipped tests of distribution package ${m}"
+            continue            
+        fi
+        local var=${m}__vm;
+        local vm=${!var}
+        local var=${m}__vma;
+        local vma=${!var}
+        if [[ "_${vma}" != "_" ]]; then
+            echo "info 00 machine alias ${vma}"
+        fi
+        libvmpool__print_vm ${vm} "info 00 machine " | grep -v '^$'
+
+        if [[ ! -f ${targets}/${m}/jail/var/script_tv/data_sheet ]]; then
+            print_result 01 "build" "1"
+            return
+        fi
+
+        if [[ "_${wait_start}" == "_1" ]]; then
+            . ${targets}/${m}/build.env
+            echo "info 00 wait ${test_delay} seconds."
+            sleep ${test_delay}
+        fi
+
+        gfail="0"
+
+        print_result 00 "build" "0"
+
+        #---------------
+        fail="0"
+        run_whitebox_test ${m} ${vm}
+        print_result 10 "white box" $fail
+        #---------------
+
+        #---------------
+        fail="0"
+        run_blackbox_test ${m} ${vm}
+        print_result 11 "black box" $fail
+        #---------------
+
+        print_result 1 "deployment test" $gfail
+
+        if [[ "_$gfail" != "_0" ]]; then
+            ggfail="1"
+        fi
+    done
+}
+
+echo "info 0 file bin/test_deployment"
+ggfail="0"
+test_deployment__main | tee /tmp/tdep691
+echo "info 2 Tests by subsystem:"
+cat /tmp/tdep691 | grep -v "^info " | grep -v " n/a " | awk '{ print $1" ss "$2 }' | sort | uniq | tee /tmp/sstests
+echo "info 0 stats tests total $(cat /tmp/tdep691 | grep -v "^info " | wc -l | tr -d ' ') : $(cat /tmp/tdep691 | grep -v "^info " | awk '{ print $1}' | sort -r | uniq -c | xargs)"
+echo "info 0 stats subsystems total $(cat /tmp/sstests | wc -l | tr -d ' ') : $(cat /tmp/sstests | awk '{ print $1 }' | sort -r | uniq -c | xargs)"
+rm -f /tmp/tdep691
+rm -f /tmp/sstests
+echo "info 0 exit_code $ggfail"
+exit $ggfail
+
