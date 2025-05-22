@@ -1,5 +1,7 @@
 #!/bin/bash
 
+. /usr/local/pathconfig.vars
+
 dev=$1
 log="/tmp/onboarding_log"
 touch $log
@@ -385,7 +387,7 @@ coach__onboard
               <h3>source handy shell aliases</h3>
             </div>
             <div className="code-block-with-copy">
-                <CopyableCodeBlock code=". lib/devenv" />
+                <CopyableCodeBlock code=". ${libdir}/devenv" />
             </div>
                 <p>This allows you to use the alias <code>dt</code> instead of the more verbose <code>bin/devtool</code>.</p>
           </div>

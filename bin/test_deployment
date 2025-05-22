@@ -9,8 +9,9 @@ fi
 wait_start=$1
 shift
 
-. lib/libconfigure.env
-. lib/libdeploy.env
+. /usr/local/pathconfig.vars
+. ${libdir}/libconfigure.env
+. ${libdir}/libdeploy.env
 
 load_env_targets ${targets} > /dev/null
 

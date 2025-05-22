@@ -1,5 +1,7 @@
 #!/bin/bash
 
+. /usr/local/pathconfig.vars
+echo "dir=======================${libdir}"
 rep="git@github.com:scriptnetwork/system.git"
 project_url="https://script.tv"
 jobs="etc/jobs"
@@ -1712,7 +1714,7 @@ libjobs__root_worktree="" #/home/manic_beret/dev/system
 libjobs__active_worktree="" #abs path to worktree
 
 init_libdevtool() {
-    . lib/libdevtool.env
+    . ${libdir}/libdevtool.env
     libdevtool__init
     if [[ " $1 " == *" forget "* ]]; then
         set__dev_handle "XX" 0

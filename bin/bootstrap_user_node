@@ -1,5 +1,7 @@
 #!/bin/bash
 
+. /usr/local/pathconfig.vars
+
 help() {
     cat << EOF
 Installs a user node using the 1-liner bash command.
@@ -157,7 +159,7 @@ user__() {
 }
 
 init_libconfigure() {
-    . lib/libconfigure.env
+    . ${libdir}/libconfigure.env
     if [ "$dev_handle" == "XX" ]; then
         >&2 echo "KO 50394 Not initialised. Run bin/devtool set_dev"
         exit 1

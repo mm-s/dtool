@@ -1,10 +1,12 @@
 #!/bin/bash
-. lib/libconfigure.env
+
+. /usr/local/pathconfig.vars
+. ${libdir}/libconfigure.env
 
 job=309
 
 init_libconfigure() {
-    . lib/libconfigure.env
+    . ${libdir}/libconfigure.env
     if [ "$dev_handle" == "XX" ]; then
         >&2 echo "KO 40394 Not initialised. Run bin/devtool set_dev"
         exit 1

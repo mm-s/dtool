@@ -1,8 +1,10 @@
 #!/bin/bash
 
+. /usr/local/pathconfig.vars
+
 set -o pipefail
 
-. lib/libdeploy.env
+. ${libdir}/libdeploy.env
 
 let dryrun_ns=0
 let dryrun_test=0

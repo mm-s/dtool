@@ -1,9 +1,11 @@
 #!/bin/bash
 
+. /usr/local/pathconfig.vars
+
 arg=$1
 
-. lib/shenv
-. lib/libconfigure.env
+. ${libdir}/shenv
+. ${libdir}/libconfigure.env
 
 clean_ss() {
     local ss=$1

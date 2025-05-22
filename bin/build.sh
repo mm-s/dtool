@@ -1,5 +1,7 @@
 #!/bin/bash
 
+. /usr/local/pathconfig.vars
+
 only_dotool_ss=""
 
 if [[ "_$1" == "_--only-dotool" ]]; then
@@ -7,7 +9,7 @@ if [[ "_$1" == "_--only-dotool" ]]; then
     shift 2
 fi
 
-. lib/libdeploy.env
+. ${libdir}/libdeploy.env
 
 libb__poke() { ## 1:class_instance 2:identifier 3:value
     liboop__poke__ "libb" "$1" "$2" "$3"   #g=static
@@ -1257,7 +1259,7 @@ mk_targets_sss() {
         ss_instance=$(echo "$line" | awk '{ print $3 }')
         m=$(echo "$line" | awk '{ print $4 }')
         ss__push ${ss} ${ss_network} ${ss_instance} $m
-            . lib/mk_target.env
+            . ${libdir}/mk_target.env
             echo "$ss: calling mk_target__cleanup ${jail}"
             mk_target__cleanup ${jail}
         ss__pop
@@ -1691,9 +1693,9 @@ tsort_resolve3_0() {
     cat /tmp/resolve3_ | while read -r line; do
         local ss=$(echo "$line" | awk '{ print $1 }')
         echo "__EMPTY__ ${ss}"
-        . lib/mk_target.env
+        . ${libdir}/mk_target.env
         pushd ${ss} > /dev/null
-            . lib/mk_target.env
+            . ${libdir}/mk_target.env
             local ss_depends=$(mk_target__build_order__depends)
             if [[ "${ss_depends}" == "all" ]]; then
                 ss_depends=$all
@@ -1761,7 +1763,7 @@ resolve_vars() {
         local fn=$(resolv_file ${ss} ${ss_network} ${ss_instance})
         touch $fn
         pushd ${ss} > /dev/null
-            . lib/mk_target.env
+            . ${libdir}/mk_target.env
             mk_target__resolve_variables
         popd > /dev/null
     done
@@ -1801,9 +1803,9 @@ sort_subsystems0() {
     cat /tmp/ssi_ | while read -r line; do
         ss=$(echo "$line" | awk '{ print $1 }')
         echo "__EMPTY__ ${ss}"
-        . lib/mk_target.env
+        . ${libdir}/mk_target.env
         pushd ${ss} > /dev/null
-            . lib/mk_target.env
+            . ${libdir}/mk_target.env
             ss_depends=$(mk_target__build_order__depends)
             if [[ "${ss_depends}" == "all" ]]; then
                 ss_depends=$all

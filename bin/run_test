@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+. /usr/local/pathconfig.vars
+
 function check_n_xxx__3 {
     local f=$1
     local exp=$2
@@ -188,7 +190,7 @@ function test__gen_vars_echo {
     >/tmp/output__whiteboard 2>/dev/null \
     gen_vars_echo___whiteboard         test/mk_target__vars.env   doall
 
-    . lib/libconfigure.env
+    . ${libdir}/libconfigure.env
     >/tmp/output__production \
     mktarget__gen_vars_echo            test/mk_target__vars.env 
 

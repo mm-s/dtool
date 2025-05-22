@@ -1,7 +1,8 @@
 #!/bin/bash
 
-. lib/shenv
-. lib/libconfigure.env
+. /usr/local/pathconfig.vars
+. ${libdir}/shenv
+. ${libdir}/libconfigure.env
 
 fetch_data__ss() {
     local conf=$1

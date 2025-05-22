@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 
-. lib/shenv
-. lib/libAWS.env
+. /usr/local/pathconfig.vars
+. ${libdir}/shenv
+. ${libdir}/libAWS.env
 
 echo "Creating test AWS instance"
 
