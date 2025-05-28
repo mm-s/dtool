@@ -1681,34 +1681,34 @@ user__() {
 }
 
 cfg_git() {
-    if is_worktree; then
-        return
-    fi
-    git config --global pull.rebase true
-    git config --global advice.pullUpdateInstead false
-    git config --global advice.statusHints false
-    if [[ -f .git/hooks/pre-push ]]; then
-        local n=$(cat .git/hooks/pre-push | grep "#devtool" | wc -l)
-        if [[ $n -eq 0 ]]; then
-            2>&1 echo "KO 40394 Found alien git hooks at .git/hooks/pre-push. Delete .git/hooks directory before continuing."
-            exit 1
-        fi
-    fi
-    if [[ ! -f .git/hooks/pre-push ]]; then
-        mkdir -p .git/hooks
-        cat << EOF > .git/hooks/pre-push
-#!/bin/bash
-#devtool
-protected_branch="main"
-current_branch=\$(git rev-parse --abbrev-ref HEAD)
-if [ "\$current_branch" = "\$protected_branch" ]; then
-    echo "KO 20918 Pushes to the main branch are disabled."
-    exit 1
-fi
-EOF
-        chmod +x .git/hooks/pre-push
-        echo "Created pre-push hook preventing pushes to branch main"
-    fi
+    # if is_worktree; then
+    #     return
+    # fi
+    # git config --global pull.rebase true
+    # git config --global advice.pullUpdateInstead false
+    # git config --global advice.statusHints false
+    # if [[ -f .git/hooks/pre-push ]]; then
+    #     local n=$(cat .git/hooks/pre-push | grep "#devtool" | wc -l)
+    #     if [[ $n -eq 0 ]]; then
+    #         2>&1 echo "KO 40394 Found alien git hooks at .git/hooks/pre-push. Delete .git/hooks directory before continuing."
+    #         exit 1
+    #     fi
+    # fi
+#     if [[ ! -f .git/hooks/pre-push ]]; then
+#         mkdir -p .git/hooks
+#         cat << EOF > .git/hooks/pre-push
+# #!/bin/bash
+# #devtool
+# protected_branch="main"
+# current_branch=\$(git rev-parse --abbrev-ref HEAD)
+# if [ "\$current_branch" = "\$protected_branch" ]; then
+#     echo "KO 20918 Pushes to the main branch are disabled."
+#     exit 1
+# fi
+# EOF
+#         chmod +x .git/hooks/pre-push
+#         echo "Created pre-push hook preventing pushes to branch main"
+#     fi
 }
 
 libjobs__root_worktree="" #/home/manic_beret/dev/system
