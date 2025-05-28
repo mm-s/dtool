@@ -3,15 +3,15 @@ prefix="/usr/local"
 pwd=$(pwd)
 dbg=1
 pushd "$prefix" > /dev/null
-    sudo rm -f bin/dotool
-    sudo rm -f bin/devtool
-    sudo rm -rf lib/dtool
-    sudo mkdir -p bin
-    sudo mkdir -p lib
+    rm -f bin/dotool
+    rm -f bin/devtool
+    rm -rf lib/dtool
+    mkdir -p bin
+    mkdir -p lib
     if [[ $dbg -eq 1 ]]; then
-        sudo ln -s $pwd/bin/dotool bin/dotool
-        sudo ln -s $pwd/bin/devtool bin/devtool
-        sudo ln -s $pwd/lib lib/dtool
+        ln -s $pwd/bin/dotool bin/dotool
+        ln -s $pwd/bin/devtool bin/devtool
+        ln -s $pwd/lib lib/dtool
     else
         install -m 755 "$pwd/bin/dotool" bin/
         install -m 755 "$pwd/bin/devtool" bin/
