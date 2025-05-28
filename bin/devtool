@@ -1681,7 +1681,7 @@ user__() {
 }
 
 cfg_git() {
-
+:
 }
 
 libjobs__root_worktree="" #/home/manic_beret/dev/system
