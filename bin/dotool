@@ -1212,10 +1212,10 @@ init_libconfigure() {
     my_vm__testnet__node="$(vm_tn ${dev_handle})"
 }
 
-if [[ "_$0" != "_bin/configure" ]]; then
-    >&2 echo "KO 66949 Wrong location. Execute from system/ directory as bin/configure"
-    exit 1
-fi
+# if [[ "_$0" != "_bin/configure" ]]; then
+#     >&2 echo "KO 66949 Wrong location. Execute from system/ directory as bin/configure"
+#     exit 1
+# fi
 
 echo "$@" | grep '\-\-home ' > /dev/null
 if [[ $? -eq 0 ]]; then
