@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 
-. /usr/local/pathconfig.vars
-
 function check_n_xxx__3 {
     local f=$1
     local exp=$2

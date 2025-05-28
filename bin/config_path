@@ -1,0 +1,22 @@
+#!/bin/bash
+prefix="/usr/local"
+pwd=$(pwd)
+dbg=1
+pushd "$prefix" > /dev/null
+    sudo rm -f bin/dotool
+    sudo rm -f bin/devtool
+    sudo rm -rf lib/dtool
+    sudo mkdir -p bin
+    sudo mkdir -p lib
+    if [[ $dbg -eq 1 ]]; then
+        sudo ln -s $pwd/bin/dotool bin/dotool
+        sudo ln -s $pwd/bin/devtool bin/devtool
+        sudo ln -s $pwd/lib lib/dtool
+    else
+        install -m 755 "$pwd/bin/dotool" bin/
+        install -m 755 "$pwd/bin/devtool" bin/
+        cp -r "$pwd/lib" lib/dtool
+    fi
+popd > /dev/null
+echo "dtool installed at $prefix"
+exit 0

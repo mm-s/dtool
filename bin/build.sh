@@ -1,7 +1,5 @@
 #!/bin/bash
 
-. /usr/local/pathconfig.vars
-
 only_dotool_ss=""
 
 if [[ "_$1" == "_--only-dotool" ]]; then

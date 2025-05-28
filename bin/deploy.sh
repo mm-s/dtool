@@ -1,7 +1,5 @@
 #!/bin/bash
 
-. /usr/local/pathconfig.vars
-
 set -o pipefail
 
 . ${libdir}/libdeploy.env

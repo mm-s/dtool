@@ -1,7 +1,5 @@
 #!/bin/bash
 
-. /usr/local/pathconfig.vars
-
 help() {
     cat << EOF
 Installs a user node using the 1-liner bash command.

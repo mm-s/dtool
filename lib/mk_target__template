@@ -1,6 +1,5 @@
 #!/bin/bash
 
-. /usr/local/pathconfig.vars
 . ${libdir}/mk_target/libbuild_ss.env
 
 ss_version="1.0"

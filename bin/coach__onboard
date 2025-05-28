@@ -1,7 +1,5 @@
 #!/bin/bash
 
-. /usr/local/pathconfig.vars
-
 dev=$1
 log="/tmp/onboarding_log"
 touch $log

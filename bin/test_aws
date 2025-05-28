@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 
-. /usr/local/pathconfig.vars
 . ${libdir}/shenv
 . ${libdir}/libAWS.env
 

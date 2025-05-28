@@ -1,7 +1,8 @@
 #!/bin/bash
 
-. /usr/local/pathconfig.vars
-echo "dir=======================${libdir}"
+prefix=$(realpath "$(dirname "${BASH_SOURCE[0]}")/..")
+libdir=${prefix}/lib/dtool
+
 rep="git@github.com:scriptnetwork/system.git"
 project_url="https://script.tv"
 jobs="etc/jobs"

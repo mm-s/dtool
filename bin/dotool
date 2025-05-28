@@ -1,6 +1,7 @@
 #!/bin/bash
 
-. /usr/local/pathconfig.vars
+prefix=$(realpath "$(dirname "${BASH_SOURCE[0]}")/..")
+libdir=${prefix}/lib/dtool
 
 help() {
     cat << EOF

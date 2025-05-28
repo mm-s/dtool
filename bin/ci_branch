@@ -1,7 +1,5 @@
 #!/bin/bash
 
-. /usr/local/pathconfig.vars
-
 deploy__log_analysis() {
     local f=$1
     local fail="ok"
