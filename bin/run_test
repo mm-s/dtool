@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+prefix=$(realpath "$(dirname "${BASH_SOURCE[0]}")/..")
+libdir=${prefix}/dtool
+
 function check_n_xxx__3 {
     local f=$1
     local exp=$2

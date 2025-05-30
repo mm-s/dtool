@@ -1,5 +1,8 @@
 #!/bin/bash
 
+prefix=$(realpath "$(dirname "${BASH_SOURCE[0]}")/..")
+libdir=${prefix}/dtool
+
 . ${libdir}/libconfigure.env
 
 job=309

@@ -1,5 +1,7 @@
 #!/bin/bash
 
+prefix="$(realpath "$(dirname "${BASH_SOURCE[0]}")/..")"
+libdir=${prefix}/dtool
 . ${libdir}/mk_target/libbuild_ss.env
 
 ss_version="1.0"

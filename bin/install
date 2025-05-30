@@ -19,6 +19,12 @@ pushd "$prefix" > /dev/null
         ln -s $pwd/bin/devtool bin/devtool
         ln -s $pwd/lib lib/dtool
     else
+        install -m 755 $pwd/bin/* bin/ 2>/dev/null
+        install -m 755 $pwd/lib/* lib/ 2>/dev/null
+        install -m 755 $pwd/lib/mk_target/* lib/mk_target/ 2>/dev/null
+        install -m 755 $pwd/lib/r2r/* lib/r2r/ 2>/dev/null
+        install -m 755 $pwd/lib/target_run/* lib/target_run/ 2>/dev/null
+        install -m 755 $pwd/lib/vm/* lib/vm/ 2>/dev/null
         install -m 755 "$pwd/bin/dotool" bin/
         install -m 755 "$pwd/bin/build.sh" bin/dotool__build
         install -m 755 "$pwd/bin/deploy.sh" bin/dotool__deploy

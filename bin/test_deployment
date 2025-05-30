@@ -9,6 +9,9 @@ fi
 wait_start=$1
 shift
 
+prefix=$(realpath "$(dirname "${BASH_SOURCE[0]}")/..")
+libdir=${prefix}/dtool
+
 . ${libdir}/libconfigure.env
 . ${libdir}/libdeploy.env
 

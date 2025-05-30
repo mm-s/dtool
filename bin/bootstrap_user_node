@@ -1,5 +1,8 @@
 #!/bin/bash
 
+prefix=$(realpath "$(dirname "${BASH_SOURCE[0]}")/..")
+libdir=${prefix}/dtool
+
 help() {
     cat << EOF
 Installs a user node using the 1-liner bash command.

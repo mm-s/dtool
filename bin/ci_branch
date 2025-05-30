@@ -1,5 +1,8 @@
 #!/bin/bash
 
+prefix=$(realpath "$(dirname "${BASH_SOURCE[0]}")/..")
+libdir=${prefix}/dtool
+
 deploy__log_analysis() {
     local f=$1
     local fail="ok"
