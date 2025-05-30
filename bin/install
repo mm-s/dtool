@@ -1,19 +1,28 @@
 #!/bin/bash
 prefix="/usr/local"
 pwd=$(pwd)
-dbg=1
+dbg=0
 pushd "$prefix" > /dev/null
     rm -f bin/dotool
+    rm -f bin/dotool__build
+    rm -f bin/dotool__deploy
+    rm -f bin/dotool__clean
     rm -f bin/devtool
     rm -rf lib/dtool
     mkdir -p bin
     mkdir -p lib
     if [[ $dbg -eq 1 ]]; then
         ln -s $pwd/bin/dotool bin/dotool
+        ln -s $pwd/bin/build.sh bin/dotool__build
+        ln -s $pwd/bin/deploy.sh bin/dotool__deploy
+        ln -s $pwd/bin/clean bin/dotool__clean
         ln -s $pwd/bin/devtool bin/devtool
         ln -s $pwd/lib lib/dtool
     else
         install -m 755 "$pwd/bin/dotool" bin/
+        install -m 755 "$pwd/bin/build.sh" bin/dotool__build
+        install -m 755 "$pwd/bin/deploy.sh" bin/dotool__deploy
+        install -m 755 "$pwd/bin/clean" bin/dotool__clean
         install -m 755 "$pwd/bin/devtool" bin/
         cp -r "$pwd/lib" lib/dtool
     fi
