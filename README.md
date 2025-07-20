@@ -125,4 +125,4 @@ bin/dotool [options] <command>
 
 ## License
 
-MIT License © 2025 Your Organization.
+GPLv3 License © 2025 mm-studios.
