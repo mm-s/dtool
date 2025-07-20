@@ -1,6 +1,6 @@
 # dtool Suite (Template Repository)
 
-![dtool logo](logo.png)
+![dtool logo](lib/dtool.png)
 
 `dtool` is a **Dev/DevOps automation suite** for **continuous delivery (CD)** and **continuous integration (CI)** across local, remote, and cloud environments (AWS, Google Cloud, etc.).  
 It contains two primary tools:
