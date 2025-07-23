@@ -3,6 +3,38 @@ prefix="/usr/local"
 pwd=$(pwd)
 dbg=0
 apt="figlet"
+
+help() {
+	cat << EOF
+dtool installer
+Invoke as:
+bin/make .................. shows help
+bin/make <cmd>
+      install ................ installs copy of files at $prefix
+      install_dev ............ installs symbolic links at $prefix
+
+EOF
+}
+
+cmd=$1
+shift
+
+if [[ -z "$cmd" ]]; then
+	>&2 help
+	exit 1
+fi
+
+if [[ "$cmd" == "install_dev" ]]; then
+	cmd="install"
+	dbg=1
+fi
+
+if [[ "$cmd" != "install" ]]; then
+	>&2 help
+	>&2 echo "KO 50498 invalid command $cmd"
+	exit 1
+fi
+
 pushd "$prefix" > /dev/null
     rm -f bin/dotool
     rm -f bin/dotool__build
