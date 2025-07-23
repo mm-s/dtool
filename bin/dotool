@@ -1,7 +1,10 @@
 #!/bin/bash
 
 prefix=$(realpath "$(dirname "${BASH_SOURCE[0]}")/..")
+#echo "prefix=$prefix"
+#exit 1
 libdir=${prefix}/lib/dtool
+#echo "libdir=$libdir"
 
 help() {
     cat << EOF
