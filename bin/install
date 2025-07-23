@@ -2,6 +2,7 @@
 prefix="/usr/local"
 pwd=$(pwd)
 dbg=0
+apt="figlet"
 pushd "$prefix" > /dev/null
     rm -f bin/dotool
     rm -f bin/dotool__build
