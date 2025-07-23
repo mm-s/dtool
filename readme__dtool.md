@@ -14,6 +14,9 @@ This repository is marked as a **template** so teams can quickly bootstrap new p
 
 ## How to Use This Repository
 
+### Option 0 – Install as a system tool
+Run bin/make for installer menu.
+
 ### Option 1 – Start a New Project (Recommended)
 Use the **template feature**:
 1. Click **"Use this template"** at the top of the GitHub repository page.
