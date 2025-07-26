@@ -1,0 +1,42 @@
+#!/bin/bash
+
+function filter_errors {
+    while read -r line; do
+        let is_error=0 #TODO: apply heuristics to determine line is error or debug
+        if [[ is_error -eq 1 ]]; then
+            >&2 echo "$line"
+        else
+            echo "$line"
+        fi
+    done
+}
+
+function build_install {
+
+    export NVM_DIR="$HOME/.nvm"
+    [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+
+    original_node_version=$(node -v)
+    echo "Current Node version: $original_node_version"
+
+    nvm use 18.20.1 || { nvm install 18.20.1 && nvm use 18.20.1; }
+
+    npm install
+    if [[ $? -ne 0 ]]; then
+        >&2 echo "KO 13940 build failed"
+        exit 1
+    fi
+
+    nvm use $original_node_version
+    echo "Switched back to original Node version: $original_node_version"
+
+    mkdir -p licensing
+}
+
+build_install 2> >(filter_errors)
+if [[ $? -ne 0 ]]; then
+    >&2 echo "KO 52049"
+    exit 1
+fi
+exit 0
+

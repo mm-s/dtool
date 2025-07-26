@@ -1,0 +1,24 @@
+#!/bin/bash
+
+# XX.cfg:
+#
+# add_ss__node testnet genesis
+# add_ss__node testnet user1
+#
+
+# bin/hotfix_vm (this file)
+# Invoke with hostname. Your hostname is:
+# bin/configure info_vm | grep VM_server_name
+
+hostname=$1 # vmsto04.cto.script.tv
+
+if [[ -z "$hostname" ]]; then
+    >&2 echo "bin/configure ; "
+    >&2 echo "KO 30298 hostname e.g. vmsto04.cto.script.tv; "
+    exit 1
+fi
+
+#scp r2r.js root@${hostname}:/svr/script_tv/be/b2c/testnet/genesis/ || exit 1
+scp r2r/libr2r_b2c__b__800.env root@${hostname}:/svr/script_tv/be/b2c/testnet/genesis/r2r/ || exit 1
+ssh root@${hostname} "systemctl restart script_tv__be__b2c.service"
+exit 0

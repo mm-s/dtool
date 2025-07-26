@@ -3,7 +3,7 @@
 set -o pipefail
 
 prefix=$(realpath "$(dirname "${BASH_SOURCE[0]}")/..")
-libdir=${prefix}/dtool
+libdir=${prefix}/lib/dtool
 . ${libdir}/libdeploy.env
 
 let dryrun_ns=0

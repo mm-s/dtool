@@ -1,8 +1,10 @@
 #!/bin/bash
 
-arg=$1
 prefix=$(realpath "$(dirname "${BASH_SOURCE[0]}")/..")
-libdir=${prefix}/dtool
+libdir=${prefix}/lib/dtool
+
+
+arg=$1
 . ${libdir}/shenv
 . ${libdir}/libconfigure.env
 

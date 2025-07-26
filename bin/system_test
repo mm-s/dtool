@@ -1,0 +1,9 @@
+#!/bin/bash
+
+ts=$(date +%s)
+
+cat << EOF
+OK dtool System Test started. ${ts}
+OK dtool System Test ended.  ${ts}
+
+EOF

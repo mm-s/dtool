@@ -1,0 +1,106 @@
+#!/bin/bash
+
+help() {
+    cat << EOF
+Usage: fetch_data [command/conf] [options]
+
+Data items:
+    * 
+
+Fetch Configurations:
+  host <hostname>                               Fetch all from given host
+  stage                                         Fetch all from stage
+  prod | stage1                                 Fetch all from production, needed for CI.
+
+Commands:
+  clean                                         Clean files
+  --help | -h                                   Display this help message.
+EOF
+}
+
+odir=""
+
+fetch_SS() {
+    local host=$1
+
+    eval "$(dotool env)"
+    print_env
+    local ss=$()
+
+#
+# prod - mainnet:
+# root@scriptbank:~# find /etc/script_tv/be/b2c -type f -name "env"
+# /etc/script_tv/be/b2c/mainnet/genesis/env
+#
+# stage:
+# root@ip-172-31-4-236:~# find /etc/script_tv/be/b2c -type f -name "env"
+# /etc/script_tv/be/b2c/mainnet/genesis/env
+# /etc/script_tv/be/b2c/testnet/genesis/env
+#
+#
+    local envs=$(ssh root@${host} "find /etc/${system_unix_name}/${ss} -type f -name \"env\"")
+    local e
+    for e in $envs; do
+        local tmpfile=$(mktemp) 
+        scp root@${host}:$e $tmpfile
+        . $tmpfile
+        echo "=== Environment at fetch/${odir}/${tgt_path}"
+        local dest="fetch/${odir}/${tgt_path}"
+        mkdir -p $dest
+        mv $tmpfile $dest/env
+    done
+}
+
+fetch_data__hostname() {
+    local hostname=$1
+    fetch_SS ${hostname}
+}
+
+#---------------------------------------------------
+
+fetch_data__host() {
+    local host=$1
+    if [[ -z "$host" ]]; then
+        >&2 echo "KO 66909 args"
+        exit 1
+    fi
+    odir="${host}"
+    fetch_data__hostname "${host}"
+}
+
+fetch_data__prod() { #Needed for CI
+    odir="prod"
+    local host="vmlon07.cto.script.tv"
+    fetch_data__hostname ${host}
+}
+
+fetch_data__stage() {
+    odir="stage"
+    local host="vmlon03.cto.script.tv"
+    fetch_data__hostname ${host}
+}
+
+clean() {
+:
+}
+
+cmd=$1
+shift
+
+if [[ $cmd == "stage" ]]; then
+    fetch_data__stage
+elif [[ $cmd == "stage1" || $cmd == "prod" ]]; then #Needed for CI
+    fetch_data__prod
+elif [[ $cmd == "host" ]]; then
+    fetch_data__host $1
+elif [[ $cmd == "clean" ]]; then
+    clean
+elif [[ $cmd == "--help" || $cmd == "-h" ]]; then
+    help
+else
+    >&2 help
+    >&2 echo "KO 73069 Command not found. $cmd"
+    exit 1
+fi
+exit 0
+

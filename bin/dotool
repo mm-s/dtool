@@ -8,7 +8,7 @@ libdir=${prefix}/lib/dtool
 
 help() {
     cat << EOF
-Script-TV devops tool. Version ${version}.
+dtool - dotool - DevOps Tool. Version ${version}.
     - config file: ${datadir}/config
     - build mode: ${build_mode}
     - This Operating System is $OSTYPE
@@ -22,7 +22,9 @@ Usage:
     $0 [options] <command>
 
 Options:
-    --home <path> ........... Homedir. [${libconfigure__home}]
+    -init ................... set permanent homedir at current directory.
+    --home <path> ........... Use path as Homedir. [${libconfigure__home}]
+
     --cfg_ss <file>.......... Use given subsystems configuration file.
     --cfg_hosts <file> ...... Use given hosts definition file.
     --debug ................. Set 'debug' build mode.
@@ -32,11 +34,14 @@ Options:
     --verbose ............... Show confirmation messages. [${verbose}]
     --verbose_build [0|1] ... Hide/show compilation details during the build process. [${verbose_build}]
 
+Subsystem codebases
+    initss <rel/path> ....... Ensures that a Subsystem (SS) interface is found in the given path.
+
 Subsystem/hosts configuration commands: cfg files cfg_ss.env and cfg__hosts.env
     link ................ Interactively links cfg_ss.env and cfg__hosts.env
     link_ss <dir> <net> <inst> <mnemonic> ........
                     ..... link a single-subsystem (dir)
-                          Example: bin/configure link_ss fe/main central lon m1
+                          Example: dotool link_ss fe/main central lon m1
     link_ss <cfg_ss> .... link subsystems in given cfg file.
     link_hosts .......... re-link only cfg_hosts
     link_ss_deps ........ link a single-subsystem + all its dependent subsystems.
@@ -66,6 +71,7 @@ Info commands:
     lint_check .......... Find offences in the source code.
     dep_graph ........... Output subsystem dependency graph.
     cables .............. Prnts variables needed by subsystems + dependency info.
+    env ................. Prints current environment values.
 
 VM pool:
     info_vm [<vm>]....... Prints VM details.
@@ -125,6 +131,31 @@ EOF
 EOF
 }
 
+initdir() {
+    if [[ -d .dtool ]]; then
+        echo "OK .dtool dir already exists."
+    else
+        mkdir .dtool
+        echo "OK .dtool dir created."
+    fi
+    if [[ -f makefile ]]; then
+        echo "OK makefile already exists."
+    else
+        cat << EOF > makefile
+include ${libdir}/dtool.mk
+EOF
+        echo "OK makefile created."
+    fi
+    if [[ -f .dtool/env ]]; then
+        echo "OK .dtool/env already exists."
+    else
+        cat << EOF > .dtool/env
+libdir="${libdir}"
+EOF
+        echo "OK .dtool/env created."
+    fi
+}
+
 on__cfg_ss() {
     echo ""
 }
@@ -145,9 +176,10 @@ lint_check_dir() {
     for f in $(find . -type f | grep ".*\.properties\$"); do
         f=$(echo $f | sed "s#^\./\(.*\)#\1#")
         echo -n "file $pwd/$f"
-        cat $f | grep "script\.tv" > /dev/null
+        local escaped="${system__DNS__domain//./\\.}"
+        cat $f | grep "$escaped" > /dev/null
         if [[ $? -ne 0 ]]; then
-            echo "... Found string script.tv !!!!!!!!!!!"
+            echo "... Found string ${system__DNS__domain} !!!!!!!!!!!"
         else
             echo "... OK"
         fi
@@ -256,7 +288,7 @@ fi
 
 let ideps=0
 if [[ ! -d system ]]; then
-    git clone git@github.com:scriptnetwork/system.git
+    git clone $rep
     if [[ $? -ne 0 ]]; then
         >&2 echo "KO 84593"
         exit 1
@@ -267,7 +299,7 @@ fi
 pushd system > /dev/null
     git checkout ${dev_handle}/main
     git pull
-    bin/configure --save --dev_handle ${dev_handle} vm  --release
+    dotool --save --dev_handle ${dev_handle} vm  --release
 
     echo "Automatic Deployment interrupted here. Work in progress."
     echo "Come over and do it manually!."
@@ -279,12 +311,12 @@ pushd system > /dev/null
     #    let ideps=1
     #fi
     #if [[ \$ideps -eq 1 ]] then
-    #    sudo bin/configure build_deps
+    #    sudo dotool build_deps
     #    if [[ \$? -ne 0 ]]; then
     #        >&2 echo "KO 84593"
     #        exit 1
     #    fi
-    #    sudo bin/configure dev_deps
+    #    sudo dotool dev_deps
     #    if [[ \$? -ne 0 ]]; then
     #        >&2 echo "KO 84593"
     #        exit 1
@@ -416,9 +448,100 @@ sshvm() {
     ssh -p ${m0__sshport} ${user}@${m0__server_name}
 }
 
+libdotool__initss_cp() {
+    local srcf=$1
+    local dstf=$2
+    if [[ ! -f ${dstf} ]]; then
+        mkdir -p $(dirname ${dstf})
+        cp ${srcf} ${dstf} || {
+            >&2 echo "KO 50493 file copy error $srcf $dstf"
+            exit 1
+        }
+        echo "OK New file ${dstf}"
+    else
+        echo "OK Already exists ${dstf}"
+    fi
+}
+
+libdotool__initss() {
+    local path=$1
+    local skeltemplate=$2
+    if [[ -z "$path" ]]; then 
+        >&2 echo "KO 43092 path to SS"
+        exit 1
+    fi
+    if [[ ! -d "$path" ]]; then
+        mkdir -p $path || {
+            >&2 echo "KO 43013 cannot create $path"
+            exit 1
+        }
+        echo "OK Create path $path"
+    else
+        echo "OK path $path exists."
+    fi
+    local dst=$(realpath $path)
+    # Copy all files from ss_skel, preserving directory structure
+    find "$libdir/ss_skel/${skeltemplate}" -type f | while read -r file; do
+        # Strip leading prefix from file path (correctly expands $libdir)
+        local rel="${file#"$libdir/ss_skel/${skeltemplate}/"}"
+        libdotool__initss_cp "$file" "$dst/$rel"
+    done
+}
+
 ################################################################################
 ###################################################### user entry points
 ################################################################################
+
+user__env() {
+    local pwd=$(pwd)
+    local ss=$(echo "$pwd" | sed "s~${system_home}/~~")
+    if [[ $ss == $pwd ]]; then
+        ss=""
+    fi
+
+    pushd ${system_home} > /dev/null
+        . cfg/system.env
+    popd > /dev/null
+
+
+    ic=$(cat << EOF
+libdir=$libdir
+system_home=$system_home
+$(system_vars__echo)
+ss="${ss}"
+EOF
+)
+
+
+    cat << EOF
+$ic
+
+print_env() {
+    cat << IEOF
+$ic
+IEOF
+}
+
+EOF
+
+}
+
+user__initss() {
+    local path=$1
+    if [[ -z "$path" ]]; then 
+        >&2 echo "KO 43092 path to SS"
+        exit 1
+    fi
+    local skeltemplate=$(echo "$path" | cut -d'/' -f1)
+    if [[ ! -d "$libdir/ss_skel/$skeltemplate" ]]; then 
+        >&2 echo "KO 43093 skeltemplate not found $libdir/ss_skel/$skeltemplate"
+        >&2 ls -1 $libdir/ss_skel
+        exit 1
+    fi
+    n=1
+    libdotool__initss $path $skeltemplate
+
+}
 
 user__gen__set_vars__review_file() {
     mk_target__gen__set_vars__review_file  be/L1/script4/lib/mk_target.env
@@ -534,23 +657,25 @@ user__make_ss() {
     local ss_instance=$3  
     local m=$4            #mnemonic e.g. m1
     let n=4  ##consume args
-    save_cfg
-    link_ss_ ${ss} ${ss_network} ${ss_instance} ${m}
-    if [[ $? -ne 0 ]]; then
+    pushd ${system_home} > /dev/null
+        save_cfg
+        link_ss_ ${ss} ${ss_network} ${ss_instance} ${m}
+        if [[ $? -ne 0 ]]; then
+            restore_cfg
+            >&2 pwd
+            >&2 echo "KO 84216 "
+            exit 1
+        fi
+        #make
+        dotool__build --only-dotool $ss
+        if [[ $? -ne 0 ]]; then
+            restore_cfg
+            >&2 pwd
+            >&2 echo "KO 84217 "
+            exit 1
+        fi
         restore_cfg
-        >&2 pwd
-        >&2 echo "KO 84216 "
-        exit 1
-    fi
-    #make
-    bin/build.sh --only-dotool $ss
-    if [[ $? -ne 0 ]]; then
-        restore_cfg
-        >&2 pwd
-        >&2 echo "KO 84217 "
-        exit 1
-    fi
-    restore_cfg
+    popd > /dev/null
 }
 
 user__link_ss_deps() {
@@ -672,8 +797,8 @@ user__watch_issue() {
         exit 1
     fi
     echo "fetching cast from [${dev^^}] VM..."
-    echo "scp root@${dev}.script.tv:/tmp/issue.cast /tmp"
-    scp root@${dev}.script.tv:/tmp/issue.cast /tmp
+    echo "scp root@${dev}.${showcase_domain}:/tmp/issue.cast /tmp"
+    scp root@${dev}.${showcase_domain}:/tmp/issue.cast /tmp
     if [[ $? -ne 0 ]]; then
         >&2 echo "KO 66857"
         exit 1
@@ -1005,7 +1130,7 @@ user__github() {
     2>/tmp/sshoutput ssh -p $port ${user}@${svr} "cat ~/.ssh/id_rsa.pub"
     cat /tmp/sshoutput | head -n1 | grep "Permission denied" > /dev/null
     if [[ $? -eq 0 ]]; then
-        >&2 echo "KO 78690 The user $devuser is not set up in your VM. hint: bin/configure remote"
+        >&2 echo "KO 78690 The user $devuser is not set up in your VM. hint: dotool remote"
         exit 1
     fi
     if [[ -f /tmp/sshoutput ]]; then
@@ -1036,7 +1161,7 @@ scp_user_bin() {
     cat /tmp/sshoutput | grep "Permission denied." > /dev/null
     if [[ $? -eq 0 ]]; then
         >&2 echo
-        >&2 echo "KO 25201 Github complains. Have you given authorization for the key bin/configure github?."
+        >&2 echo "KO 25201 Github complains. Have you given authorization for the key dotool github?."
         rm -f /tmp/sshoutput
         exit 1
     fi
@@ -1054,7 +1179,7 @@ user__vm_deploy() {
     2>/tmp/sshoutput ssh -p $port ${user}@$ip "ls > /dev/null"
     cat /tmp/sshoutput | head -n1 | grep "Permission denied" > /dev/null
     if [[ $? -eq 0 ]]; then
-        >&2 echo "KO 78790 The user $devuser is not set up in your VM. hint: bin/configure remote"
+        >&2 echo "KO 78790 The user $devuser is not set up in your VM. hint: dotool remote"
         exit 1
     fi
     if [[ -f /tmp/sshoutput ]]; then
@@ -1125,7 +1250,7 @@ user__leases() {
     echo "VM Aliases:"
     list_aliases #| column -t -s ' '
     echo
-    echo "More info: bin/configure info_vm <VM>"
+    echo "More info: dotool info_vm <VM>"
 }
 
 user__prod_info() {
@@ -1140,10 +1265,10 @@ user__prod_info() {
 user__create_wilcard_cert() {
     local domain=$1
     if [[ -z $1 ]]; then
-        domain="cto.script.tv"
-        local ca_domain="cto.script.tv"
+        domain="${showcase_domain}"
+        local ca_domain="${showcase_domain}"
     else
-        domain="$1.cto.script.tv"
+        domain="$1.${showcase_domain}"
         local ca_domain=$(echo ${domain} | tr '.' ' ' | cut -d " " -f 2- | tr ' ' '.')
         n=1
     fi
@@ -1164,8 +1289,8 @@ EOF
     echo ${ssl_certs}/${cert_file}
 }
 
-user__postfix_bundle() { #host: *.cto.script.tv (for *=mail, mail2)
-    local domain="cto.script.tv"
+user__postfix_bundle() { #host: *.${showcase_domain} (for *=mail, mail2)
+    local domain="${showcase_domain}"
     echo "domain: $domain"
     local ssl_certs="${secrets_root}/ssl/certs"
     local cert_file=${ssl_certs}/${domain}.crt
@@ -1205,7 +1330,7 @@ init_libconfigure() {
     verboselog=/dev/null
     #preset__set_ss
     if [ "$dev_handle" == "XX" ]; then
-        >&2 echo "KO 40394 Not initialised. Run bin/devtool set_dev"
+        >&2 echo "KO 40394 Not initialised. Run devtool set_dev"
         exit 1
     fi
     devuser=${dev_handle,,}
@@ -1219,6 +1344,11 @@ init_libconfigure() {
 #     >&2 echo "KO 66949 Wrong location. Execute from system/ directory as bin/configure"
 #     exit 1
 # fi
+
+echo "$@" | grep -E '(^| +)-init($| )' > /dev/null
+if [[ $? -eq 0 ]]; then
+    initdir
+fi
 
 echo "$@" | grep '\-\-home ' > /dev/null
 if [[ $? -eq 0 ]]; then
@@ -1242,40 +1372,44 @@ while [[ true ]]; do
     while [[ true ]]; do
         opt=$1
         shift
-        if [[ "_$opt" == "_" ]]; then
+        if [[ -z "$opt" ]]; then
             break
         fi
-        if [[ "_$opt" == "_--home" ]]; then
+        if [[ "$opt" == "--home" ]]; then
             #already processed above
             shift
             continue
         fi
+        if [[ "$opt" == "-init" ]]; then
+            #already processed above
+            continue
+        fi
         let nc=$nc+1
-        if [[ "_$opt" == "_--cfg_ss" ]]; then
+        if [[ "$opt" == "--cfg_ss" ]]; then
             input=$1
             shift
             link_ss__file $input
             continue
-        elif [[ "_$opt" == "_--cfg_hosts" ]]; then
+        elif [[ "$opt" == "--cfg_hosts" ]]; then
             input=$1
             shift
             link_hosts__file $input
             continue
-        elif [[ "_$opt" == "_--save" ]]; then
+        elif [[ "$opt" == "--save" ]]; then
             let save=1
             print_verbose "saving flags"
             continue
-        elif [[ "_$opt" == "_--verbose" ]]; then
+        elif [[ "$opt" == "--verbose" ]]; then
             print_verbose "verbose mode ON"
             if [[ $save -eq 1 ]]; then
                 stcfg__set_value "verbose" "${verbose}" ${verbose}
             fi
             continue
-        elif [[ "_$opt" == "_--verbose_build" ]]; then
+        elif [[ "$opt" == "--verbose_build" ]]; then
             input=$1
             shift
             verbose_build=1
-            if [[ "_${input}" == "_0" ]]; then
+            if [[ "${input}" == "0" ]]; then
                 verbose_build=0            
             fi 
             stcfg__set_value "verbose_build" "${verbose_build}" ${verbose}
@@ -1285,18 +1419,18 @@ while [[ true ]]; do
                 print_verbose "verbose_build mode is ON"
             fi
             continue
-        elif [[ "_$opt" == "_--batch" ]]; then
+        elif [[ "$opt" == "--batch" ]]; then
             let batch=1
             print_verbose "non-interactive mode selected."
             continue
-        elif [[ "_$opt" == "_--debug" ]]; then
+        elif [[ "$opt" == "--debug" ]]; then
             build_mode="debug"
             print_verbose "build mode \"$build_mode\" selected."
             if [[ $save -eq 1 ]]; then
                 stcfg__set_value "build_mode" "${build_mode}" ${verbose}
             fi
             continue
-        elif [[ "_$opt" == "_--release" ]]; then
+        elif [[ "$opt" == "--release" ]]; then
             build_mode="release"
             print_verbose "build mode \"$build_mode\" selected."
             if [[ $save -eq 1 ]]; then
@@ -1321,7 +1455,7 @@ while [[ true ]]; do
     fi
     shift $n
     let nc=${nc}+1
-    if [[ "_$@" == "_" ]]; then
+    if [[ -z "$@" ]]; then
         break
     fi
 done

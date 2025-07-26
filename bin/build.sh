@@ -10,6 +10,7 @@ fi
 prefix=$(realpath "$(dirname "${BASH_SOURCE[0]}")/..")
 libdir=${prefix}/lib/dtool
 . ${libdir}/libdeploy.env
+
 libb__poke() { ## 1:class_instance 2:identifier 3:value
     liboop__poke__ "libb" "$1" "$2" "$3"   #g=static
 }

@@ -40,6 +40,7 @@ pushd "$prefix" > /dev/null
     rm -f bin/dotool__build
     rm -f bin/dotool__deploy
     rm -f bin/dotool__clean
+    rm -f bin/dotool__test
     rm -f bin/devtool
     rm -rf lib/dtool
     mkdir -p bin
@@ -50,6 +51,7 @@ pushd "$prefix" > /dev/null
         ln -s $pwd/bin/deploy.sh bin/dotool__deploy
         ln -s $pwd/bin/clean bin/dotool__clean
         ln -s $pwd/bin/devtool bin/devtool
+        ln -s $pwd/bin/system_test bin/dotool__test
         ln -s $pwd/lib lib/dtool
     else
         install -m 755 $pwd/bin/* bin/ 2>/dev/null
@@ -62,6 +64,7 @@ pushd "$prefix" > /dev/null
         install -m 755 "$pwd/bin/build.sh" bin/dotool__build
         install -m 755 "$pwd/bin/deploy.sh" bin/dotool__deploy
         install -m 755 "$pwd/bin/clean" bin/dotool__clean
+        install -m 755 "$pwd/bin/system_test" bin/dotool__test
         install -m 755 "$pwd/bin/devtool" bin/
         cp -r "$pwd/lib" lib/dtool
     fi

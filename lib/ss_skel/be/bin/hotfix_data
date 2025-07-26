@@ -1,0 +1,112 @@
+#!/bin/bash
+
+help() {
+    cat << EOF
+Uploads data previously fetched (dir fetch/), and possibly transformed.
+
+$0
+   prod             .........................
+   stage            ......................... uploads be/b2c data to given host, prod or stage.
+   host <host>      .........................
+
+example: $0 stage
+
+EOF
+}
+
+odir=""
+
+hotfix_licenses() {
+        echo "Licenses"
+        local file="fetch/${odir}/${tgt_path}/licensing/license.json"
+        scp $file root@${host}:${license_dir}/
+}
+
+verify_licenses() {
+        local file="fetch/${odir}/${tgt_path}/licensing/license.json"
+	if [[ ! -f $file ]]; then
+            >&2 echo "KO 30290 $file"
+            exit 1
+        fi
+}
+
+hotfix_whitelist_license_purchases() {
+        echo "Whitelisted ethereum addresses for license purchases"
+        local file="fetch/${odir}/${tgt_path}/whitelist/address_licenses.txt"
+        scp $file root@${host}:${whitelist__address_licenses}
+}
+
+verify_whitelist_license_purchases() {
+        local file="fetch/${odir}/${tgt_path}/whitelist/address_licenses.txt"
+	if [[ ! -f $file ]]; then
+            >&2 echo "KO 30291 $file"
+            exit 1
+        fi
+        local dup=$(cat ${file} | awk '{ print $1 }' | sort | uniq -c | sort | tail -n1 | awk '{ print $1 }')
+        if [[ $dup -gt 1 ]]; then
+            >&2 echo "KO 55982 Duplicate entries found in whitelist"
+            exit 1
+        fi
+}
+
+hotfix_SS() {
+    local host=$1
+    local ss="be/b2c"
+    local envs=$(find fetch/${odir} -type f -name "env")
+    local e
+    for e in $envs; do
+        echo "Load environment $e"
+        . $e
+        local src="fetch/${odir}/${tgt_path}"
+        verify_licenses
+        verify_whitelist_license_purchases
+        hotfix_licenses
+        hotfix_whitelist_license_purchases
+    done
+}
+
+hotfix_data__hostname() {
+    local hostname=$1
+    echo "hotfixing address_licenses in $hostname"
+    hotfix_SS ${hostname}
+}
+
+hotfix_data__host() {
+    local host=$1
+    if [[ -z "$host" ]]; then
+        >&2 echo "KO 66909 args"
+        exit 1
+    fi
+    odir="${host}"
+    hotfix_data__hostname "${host}"
+}
+
+hotfix_data__prod() { #Needed for CI
+    odir="prod"
+    local host="vmlon07.cto.script.tv"
+    hotfix_data__hostname ${host}
+}
+
+hotfix_data__stage() {
+    odir="stage"
+    local host="vmlon03.cto.script.tv"
+    hotfix_data__hostname ${host}
+}
+
+cmd=$1
+shift
+
+if [[ $cmd == "stage" ]]; then
+    hotfix_data__stage
+elif [[ $cmd == "prod" ]]; then #Needed for CI
+    hotfix_data__prod
+elif [[ $cmd == "host" ]]; then
+    hotfix_data__host $1
+elif [[ $cmd == "--help" || $cmd == "-h" ]]; then
+    help
+else
+    >&2 help
+    >&2 echo "KO 71069 Command not found. $cmd"
+    exit 1
+fi
+exit 0

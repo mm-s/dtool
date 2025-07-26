@@ -3,11 +3,6 @@
 prefix=$(realpath "$(dirname "${BASH_SOURCE[0]}")/..")
 libdir=${prefix}/lib/dtool
 
-rep="git@github.com:scriptnetwork/system.git"
-project_url="https://script.tv"
-jobs="etc/jobs"
-binname=$0
-
 jobs_state_menu() {
     cat << EOF
         fetch .......................... Updates the local job list.
@@ -62,7 +57,7 @@ EOF
 
 help__ca() {
     cat << EOF
-    --- CA and SSL Certificates: (Default domain: ${dev_handle,,}.${root_ca__domain})
+    --- CA and SSL Certificates: (Default domain: ${dev_handle,,}.${showcase_domain})
         create_CA_cert [<domain>] ...... Produce CA cert for domain.
         create_p2p_CA_cert [<domain>] .. Produce p2p CA certs at
                                          ${secrets_root}/be/b2c/mainnet/genesis and
@@ -385,7 +380,7 @@ prepare_review_request() {
         fi
         break
     done
-    local mainurl="https://${dev_handle,,}.cto.script.tv"
+    local mainurl="https://${dev_handle,,}.${showcase_domain}"
     while [[ true ]]; do
         echo -n "is ${mainurl} available? [yes|reason/more accurate URL]: " 
         read -r url_availablex
@@ -599,8 +594,8 @@ Reminders:
   design or initial ideas. Drawings, diagrams or napkins are very welcome.
   This information add up to our knowledge base and will help when fed to our future AI specially trined for our codebase.
 * Make sure the tickets listed above are up to date with your last day. progress/status/investigation/notes."
-* If you want to change the active job ctrl-c + bin/devtool chjob
-* If you want to add/remove jobs ctrl-c + bin/devtool take/release
+* If you want to change the active job ctrl-c + devtool chjob
+* If you want to add/remove jobs ctrl-c + devtool take/release
 
 EOF
     echo -n "Continue? [Enter to continue, Ctrl+C to abort]: "
@@ -675,7 +670,7 @@ rn__ensure_section_jobs() {
         fi
     done < "$file"
     cat << EOF > /tmp/reviewme.33845
-# Release Notes. Script.tv
+# Release Notes. ${project_title}
 
 ### jobs
 
@@ -783,7 +778,7 @@ user__CA_keys() {
 devtool__create_CA_cert() {
     local domain=$1
     if [[ -z "$domain" ]]; then
-        local ca_domain=${root_ca__domain}
+        local ca_domain=${showcase_domain}
         local domain="${dev_handle,,}.${ca_domain}"
     else
         local domain="$1"
@@ -823,7 +818,7 @@ user__create_p2p_CA_cert() {
         let n=1
     fi
     if [[ -z "$domain" ]]; then
-        local ca_domain=${root_ca__domain}
+        local ca_domain=${showcase_domain}
         local domain="${dev_handle,,}.${ca_domain}"
     else
         local domain="$1"
@@ -1029,7 +1024,7 @@ release_notes__from_jobs_to_main() {
         cat doc/release_notes.md | grep "^${stageline}" -A10000000 > /tmp/items_stageprod
 
         cat << EOF > doc/release_notes.md
-# Release Notes. Script.tv
+# Release Notes. ${project_title}
 
 ### main
 
@@ -1466,7 +1461,7 @@ user__invite() {
         exit 1
     fi
     session="${dev_handle}-${dev}"
-    echo "Invite: bin/devtool join ${dev_handle} \"$sshline\""
+    echo "Invite: devtool join ${dev_handle} \"$sshline\""
     echo -n "Continue? [Enter to continue, Ctrl+C to abort]: "
     read x
     tmux new-session -s "$session" 
